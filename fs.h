@@ -3,7 +3,9 @@
 
 #include <stdio.h>
 #include <time.h>
-
+#include <stdlib.h>
+#include "disk.h"
+#include "config.h"
 //我要实现类似ext2的文件系统，帮我搞一段示意图
 // 1 block -> 1024B
 // | super block | inode bitmap | block bitmap | inode table  | data block |
@@ -20,9 +22,21 @@ typedef struct SuperBlock {
     unsigned short block_size;            // 2B   block size
 } SuperBlock;
 
+typedef int* InodeBitmap;
+typedef int* BlockBitmap;
+
+typedef struct FileSystem {
+    Disk* disk;
+    SuperBlock* super_block;
+    InodeBitmap* inode_bitmap;
+    BlockBitmap* block_bitmap;
+    Dentry* root;
+    Dentry* current;
+} FileSystem;
+
 typedef struct INode {
     unsigned short inode_number;          // 2B   inode的编号
-    unsigned short length;                // 2B   文件长度
+    unsigned short size;                  // 2B   文件大小
     unsigned short direct_block[10];      // 16B  直接块
     unsigned short first_inedxed_block;   // 2B   一级索引块
     unsigned short second_indexed_block;  // 2B   二级索引块 
@@ -31,7 +45,7 @@ typedef struct INode {
     time_t created_time;                  // 8B   创建时间
     time_t modified_time;                 // 8B   修改时间
     time_t access_time;                   // 8B   访问时间
-} INode;                                 // 52B
+} INode;                                  // 52B
 
 typedef struct Dentry {
     unsigned short inode;                 // 2B   inode的编号
@@ -44,29 +58,39 @@ typedef struct Dentry {
     char** sub_dir;                       // 8B   子目录名
 } Dentry;                                 // 48B
 
-typedef int* InodeBitmap;
-typedef int* BlockBitmap;
-typedef int* IndexBlock;
+typedef struct UserOpenItem {
+    INode inode;                          // 修改之后的文件inode, 用于保存变更, 也可用于判断是否打开
+    int offset;                           // 文件内读写偏移量
+    bool modify;                          // inode是否被修改
+    bool open;                            // 文件是否被打开
+} UserOpenItem;
 
-void initSuperBlock(SuperBlock* sb, unsigned short inodeNum, unsigned short blockNum, unsigned short inodeSize, unsigned short blockSize);
+typedef struct UserOpenTable {
+    UserOpenItem* items;                  // 用户打开文件表
+    int size;                             // 用户打开文件数
+    int capacity;                         // 用户打开文件表容量
+} UserOpenTable;
 
-void initInodeBitmap(InodeBitmap ib, unsigned short inodeNum);
+void tbl_push_back(UserOpenTable* tb, UserOpenItem item);
 
-void initBlockBitmap(BlockBitmap bb, unsigned short blockNum);
+void tbl_pop_back(UserOpenTable* tb);
 
-void initIndexBlock(IndexBlock ib, unsigned short blockSize);
+void tbl_init(UserOpenTable* tb);
 
-void getDentryFromInode(Dentry* d, unsigned short inode, unsigned short fatherInode);
+void tbl_destroy(UserOpenTable* tb);
 
-void getDentryFromPath(Dentry* d, char* path);
+void tbl_resize(UserOpenTable* tb, int new_size);
 
-void printDentry(Dentry* d);
+void tbl_clear(UserOpenTable* tb);
 
+void tbl_remove(UserOpenTable* tb, int index);
+
+// file system
 void saveFs(void *ptr, size_t size, FILE *stream);
 
 void loadFs(void *ptr, size_t size, FILE *stream);
 
-// commands
+// api
 
 // my_format
 void format();
@@ -88,13 +112,16 @@ void cd(Dentry* d, char* path);
 void touch(Dentry* d, char* path);
 
 // my_open
-void open(Dentry* d, char* path);
+void open(UserOpenTable* tb, unsigned short inode_num);
 
 // my_close
-void close(Dentry* d, char* path);
+void close(UserOpenTable* tb, unsigned short inode_num);
+
+// my_read
+void read(UserOpenTable* tb, unsigned short tbl_index, int length, char* content);
 
 // my_write
-void write(Dentry* d, char* path, char* content);
+void write(UserOpenTable* tb, unsigned short tbl_index, int length, char* content);
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
