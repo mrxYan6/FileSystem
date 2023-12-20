@@ -11,44 +11,47 @@
 // 1 block -> 1024B
 // | super block | inode bitmap | block bitmap | inode table  | data block |
 // | 1 block     | 1 block      | 1 block      | 56 block     | 965 block  |
+typedef unsigned int ui32;
+typedef unsigned int ui16;
 
 typedef struct SuperBlock {
-    unsigned short inode_bitmap_block;    // 2B   inode bitmap block number
-    unsigned short block_bitmap_block;    // 2B   block bitmap block number
-    unsigned short inode_table_block;     // 2B   inode table block number
-    unsigned short data_block;            // 2B   data block number
-    unsigned short inode_num;             // 2B   inode number
-    unsigned short block_num;             // 2B   block number
-    unsigned short inode_size;            // 2B   inode size
-    unsigned short block_size;            // 2B   block size
+    ui16 inode_bitmap_block;    // 2B   inode bitmap block number
+    ui16 block_bitmap_block;    // 2B   block bitmap block number
+    ui16 inode_table_block;     // 2B   inode table block number
+    ui16 data_block;            // 2B   data block number
+    ui16 inode_num;             // 2B   inode number
+    ui16 block_num;             // 2B   block number
+    ui16 inode_size;            // 2B   inode size
+    ui16 block_size;            // 2B   block size
 } SuperBlock;
 
 void initSuperBlock(SuperBlock* sb);
 
 typedef struct INode {
-    unsigned short inode_number;          // 2B   inode的编号
-    unsigned short size;                  // 2B   文件大小
-    unsigned short direct_block[10];      // 16B  直接块
-    unsigned short first_inedxed_block;   // 2B   一级索引块
-    unsigned short second_indexed_block;  // 2B   二级索引块 
-    unsigned short type;                  // 2B   文件属性 dir/file/link rwxrwxrwx
-    unsigned short link_count;            // 2B   链接数
+    ui16 inode_number;          // 2B   inode的编号
+    ui16 size;                  // 2B   文件大小
+    ui16 direct_block[10];      // 16B  直接块
+    ui16 first_inedxed_block;   // 2B   一级索引块
+    ui16 second_indexed_block;  // 2B   二级索引块 
+    ui16 type;                  // 2B   文件属性 dir/file/link rwxrwxrwx
+    ui16 link_count;            // 2B   链接数
     time_t created_time;                  // 8B   创建时间
     time_t modified_time;                 // 8B   修改时间
     time_t access_time;                   // 8B   访问时间
 } INode;                                  // 56B
 
-typedef int* InodeBitmap;
-typedef int* BlockBitmap;
+
+typedef unsigned int* InodeBitmap;
+typedef unsigned int* BlockBitmap;
 
 typedef struct Dentry {
-    unsigned short inode;                 // 2B   inode的编号
-    unsigned short father_inode;          // 2B   父目录inode编号
-    unsigned short name_length;           // 2B   文件名长度
+    ui16 inode;                 // 2B   inode的编号
+    ui16 father_inode;          // 2B   父目录inode编号
+    ui16 name_length;           // 2B   文件名长度
     char* name;                           // 8B   文件名
-    unsigned short sub_dir_count;         // 2B   子目录数
-    unsigned short* sub_dir_length;       // 8B   子目录名长度
-    unsigned short* sub_dir_inode;        // 8B   子目录inode编号
+    ui16 sub_dir_count;         // 2B   子目录数
+    ui16* sub_dir_length;       // 8B   子目录名长度
+    ui16* sub_dir_inode;        // 8B   子目录inode编号
     char** sub_dir;                       // 8B   子目录名
 } Dentry;                                 // 48B
 
@@ -57,8 +60,8 @@ typedef struct FileSystem {
     SuperBlock super_block;
     InodeBitmap inode_bitmap;
     BlockBitmap block_bitmap;
-    unsigned short root_inode;
-    unsigned short current_dir_inode;
+    ui16 root_inode;
+    ui16 current_dir_inode;
     char* current_dir_path;
 } FileSystem;
 
@@ -118,16 +121,16 @@ void cd(FileSystem* fs, char* path);
 void touch(FileSystem* fs, char* path);
 
 // my_open
-void open(UserOpenTable* tb, unsigned short inode_num);
+void open(UserOpenTable* tb, ui16 inode_num);
 
 // my_close
-void close(UserOpenTable* tb, unsigned short inode_num);
+void close(UserOpenTable* tb, ui16 inode_num);
 
 // my_read
-void read(UserOpenTable* tb, unsigned short tbl_index, int length, char* content);
+void read(UserOpenTable* tb, ui16 tbl_index, int length, char* content);
 
 // my_write
-void write(UserOpenTable* tb, unsigned short tbl_index, int length, char* content);
+void write(UserOpenTable* tb, ui16 tbl_index, int length, char* content);
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
