@@ -127,28 +127,26 @@ ui16 getFirstInode(FileSystem* fs) {
 }
 
 INode readInode(FileSystem* fs, ui16 inode_num) {
-    //参考wirteInode写
     INode inode;
+    int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block;
     int begin = inode_num * fs->super_block.inode_size;
     int end = begin + fs->super_block.inode_size - 1;
-    
     if (begin / fs->super_block.block_size != end / fs->super_block.block_size) {
         // 跨块
         int begin_block = begin / fs->super_block.block_size;
         int end_block = end / fs->super_block.block_size;
         int begin_first = begin % fs->super_block.block_size;
-        int end_first = 0;
-        int begin_len = fs->super_block.block_size - begin_first - 1;
-        int end_len = end + 1;
+        int begin_len = fs->super_block.block_size - begin_first;
+        int end_len = end % fs->super_block.block_size + 1;
         
         void* buffer = malloc(fs->super_block.block_size);
-        assert(buffer != NULL);
-        看到到评论吗
-
-        diskReadBlock(&fs->disk, begin_block, buffer);
-        memcpy(&inode,)
         
-       
+        diskReadBlock(&fs->disk, begin_block + offset, buffer);
+        memcpy(&inode, buffer + begin_first, begin_len);
+        diskReadBlock(&fs->disk, end_block + offset, buffer);
+        memcpy(&inode + begin_len, buffer, end_len);
+
+        free(buffer);
     } else {
         // 不跨块
         int block = begin / fs->super_block.block_size;
@@ -156,8 +154,13 @@ INode readInode(FileSystem* fs, ui16 inode_num) {
         int len = end - begin + 1;
         void* buffer = malloc(fs->super_block.block_size);
 
-        
+        diskReadBlock(&fs->disk, block + offset, buffer);
+        memcpy(&inode, buffer + first, len);
+
+        free(buffer);
     }
+
+    return inode;
 }
 
 void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
@@ -265,12 +268,12 @@ int fsFree(FileSystem* fs, INode* inode) {
 }
 
 void fsAllocate(FileSystem*fs, INode* inode, int size) {
-    int old_block = (inode->size + fs->super_block.block_size - 1) / fs->super_block.block_size;
+    int old_block = inode->size / fs->super_block.block_size;   // 申请前的块数
     int new_size = size + inode->size;
-    int new_block = (new_size + fs->super_block.block_size - 1) / fs->super_block.block_size;
+    int end_block = new_size / fs->super_block.block_size;      // 申请完之后的块数
 
-    int now_block = old_block + 1;
-    int needed_block = new_block - old_block;
+    int cur_block = old_block + 1;
+    int needed_block = end_block - old_block;
     if (needed_block == 0) {
         inode->size = size;
         return;
@@ -287,17 +290,17 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
 
     // 是否在10个块内
     if (old_block < 10) {
-        for (int i = now_block; i < 10 && now_block <= new_block; ++i) {
-            inode->direct_block[i] = blocks[i - now_block];
-            now_block++;
+        for (int i = cur_block; i < 10 && cur_block <= end_block; ++i) {
+            inode->direct_block[i] = blocks[i - cur_block];
+            cur_block++;
         }
     }
 
     base += 10;
 
     // 是否在一级索引块内
-    int size_per_block = fs->super_block.block_size / sizeof(ui16);
-    if (now_block >= base && now_block <= new_block) {
+    int index_pre_block = fs->super_block.block_size / sizeof(ui16);
+    if (cur_block >= base && cur_block <= end_block) {
         ui16* first_index = (ui16*)malloc(fs->super_block.block_size);
         if (old_block >= base) {
             dataReadBlock(fs, inode->first_inedxed_block, first_index);
@@ -308,19 +311,19 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
             memset(first_index, 0xff, fs->super_block.block_size);
         }
 
-        for (int i = now_block - base; i < size_per_block && now_block <= new_block; ++i) {
-            first_index[i] = blocks[now_block - old_block];
-            now_block++;
+        for (int i = cur_block - base; i < index_pre_block && cur_block <= end_block; ++i) {
+            first_index[i] = blocks[cur_block - old_block];
+            cur_block++;
         }
 
         dataWriteBlock(fs, inode->first_inedxed_block, first_index);
         free(first_index);
     }
 
-    base += size_per_block;
+    base += index_pre_block;
 
     // 是否在二级索引块内
-    if (now_block >= base && now_block <= new_block) {
+    if (cur_block >= base && cur_block <= end_block) {
         ui16* second_index = (ui16*)malloc(fs->super_block.block_size);
         if (old_block >= base) {
             dataReadBlock(fs, inode->second_indexed_block, second_index);
@@ -331,9 +334,9 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
             memset(second_index, 0xff, fs->super_block.block_size);
         }
 
-        for (int i = now_block - base; i < size_per_block && now_block <= new_block; ++i) {
+        for (int i = cur_block - base; i < index_pre_block && cur_block <= end_block; ++i) {
             ui16* first_index = (ui16*)malloc(fs->super_block.block_size);
-            if (old_block >= base + i * size_per_block) {
+            if (old_block >= base + i * index_pre_block) {
                 dataReadBlock(fs, second_index[i], first_index);
             } else {
                 // 之前不在一级索引块内,需要创建
@@ -342,9 +345,9 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
                 memset(first_index, 0xff, fs->super_block.block_size);
             }
 
-            for (int j = now_block - base - i * size_per_block; j < size_per_block && now_block <= new_block; ++j) {
-                first_index[j] = blocks[now_block - old_block];
-                now_block++;
+            for (int j = cur_block - base - i * index_pre_block; j < index_pre_block && cur_block <= end_block; ++j) {
+                first_index[j] = blocks[cur_block - old_block];
+                cur_block++;
             }
 
             dataWriteBlock(fs, second_index[i], first_index);
@@ -366,14 +369,122 @@ void fsReAllocate(FileSystem* fs, INode* inode, int size) {
 
 void fsWrite(FileSystem*fs, INode* inode, int offset, void* buffer, int size) {
     // 参考fsRead
-}
-
-void fsRead(FileSystem*fs, INode* inode, int offset, void* buffer, int size) {
-    // 参考fsRead
     if (offset + size > inode->size) {
         fprintf(stderr, "error: index over flow\n");
         return;    
     }
+    
+    int begin = offset;
+    int end = offset + size - 1;
+    int begin_block = begin / fs->super_block.block_size;
+    int end_block = end / fs->super_block.block_size;
+    
+}
+
+void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
+    if (offset + size > inode->size) {
+        fprintf(stderr, "error: index over flow\n");
+        return;    
+    }
+
+    res = malloc(size);
+    int res_ptr = 0;
+
+    const int block_size = fs->super_block.block_size;
+    void* buffer = malloc(block_size);
+
+    int begin = offset;
+    int end = offset + size - 1;
+    int cur = begin;
+
+    int begin_block = begin / block_size;
+    int end_block = end / block_size;
+    int cur_block = begin_block;
+
+    int block_base = 0;
+    
+    
+    if (cur_block < 10 && cur_block <= end_block) {
+        // 在直接块内
+        for (int i = cur_block; i < 10 && cur_block <= end_block; ++i) {
+            dataReadBlock(fs, inode->direct_block[i], buffer);
+            int begin = cur % block_size;
+            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+            memcpy(res + res_ptr, buffer + begin, end - begin + 1);
+            res_ptr += end - begin + 1;
+            cur_block++;
+            cur += end - begin + 1;
+        }
+    }
+    
+    block_base += 10;
+
+    const int index_pre_block = block_size / sizeof(ui16);
+
+    if (cur_block >= block_base && cur_block <= end_block) {
+        // 在一级索引块内
+        ui16* first_index = (ui16*)malloc(block_size);
+        dataReadBlock(fs, inode->first_inedxed_block, first_index);
+        for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
+            dataReadBlock(fs, first_index[i], buffer);
+            int begin = cur % block_size;
+            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+            memcpy(res + res_ptr, buffer + begin, end - begin + 1);
+            res_ptr += end - begin + 1;
+            cur_block++;
+            cur += end - begin + 1;
+        }
+        free(first_index);
+    }
+
+    block_base += index_pre_block;
+    
+    if (cur_block >= block_base && cur_block <= end_block) {
+        ui16* second_index = (ui16*)malloc(fs->super_block.block_size);
+        dataReadBlock(fs, inode->second_indexed_block, second_index);
+
+        for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
+            ui16* first_index = (ui16*)malloc(fs->super_block.block_size);
+            dataReadBlock(fs, second_index[i], first_index);
+            for (int j = cur_block - block_base - i * index_pre_block; j < index_pre_block && cur_block <= end_block; ++j) {
+                dataReadBlock(fs, first_index[j], buffer);
+                int begin = cur % block_size;
+                int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+                memcpy(res + res_ptr, buffer + begin, end - begin + 1);
+                res_ptr += end - begin + 1;
+                cur_block++;
+                cur += end - begin + 1;
+            }
+            dataWriteBlock(fs, second_index[i], first_index);
+            free(first_index);
+        }
+
+        dataWriteBlock(fs, inode->second_indexed_block, second_index);
+        free(second_index);
+    }
+
+}
+
+// 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode
+void saveDentry(FileSystem* fs, Dentry* dentr, ui16 inode_id) {
+    size_t buffer_size = BLOCK_SIZE;
+    
+    char* beffer = malloc(buffer_size);
+    if(beffer == NULL){
+        fprintf(stderr,"Error:Can't find a memory to save!");
+        return;
+    }
+    
+    char* ptr = buffer;
+    memcpy(ptr,&dentry->inode,sizeof(ui16));
+    ptr += sizeof(ui16);
+    memcpy(ptr,&dentry->father_inode,sizeof(ui16));
+    ptr += sizeof(ui16);
+    memcpy(ptr,&dentry->name_length,sizeof(ui16));
+    ptr += sizeof(ui16);
+    memset(ptr,)
+    memcpy(ptr,&dentry->sub_dir_count,sizeof(ui16));
+    ptr += sizeof(ui16);
 
 }
 
@@ -419,4 +530,9 @@ void format(FileSystem* fs) {
     fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
 
     mkroot(fs, "/");
+}
+
+void rm(FileSystem* fs, char* path, int recursive){
+    
+
 }

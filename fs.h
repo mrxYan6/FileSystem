@@ -111,6 +111,7 @@ void mkdir(FileSystem* fs, char* path);
 // recursive = 0: rm file or empty dir; recursive = 1: rm dir and all its subdirs
 void rm(FileSystem* fs, char* path, int recursive); 
 
+void saveDentry(FileSystem* fs,Dentry* dentr, ui16 inode_id);
 // my_ls
 void ls(FileSystem* fs, char* path);
 
@@ -134,7 +135,7 @@ void write(UserOpenTable* tb, ui16 tbl_index, int length, char* content);
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
-void ln (FileSystem* fs, char* path, char* link, int soft);
+void ln(FileSystem* fs, char* path, char* link, int soft);
 
 // exit fs
 void exitfs();
