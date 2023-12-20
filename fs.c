@@ -15,13 +15,13 @@ void loadFs(FileSystem* fs, FILE *stream) {
 
         buffer = malloc(BLOCK_SIZE);
         size_t read_cnt = fread(buffer, BLOCK_SIZE, 1, stream);
-        if (memcmp(buffer, "ext233233", strlen("ext233233")) != 0) {
+        if (memcmp(buffer, "ext233233", sizeof("ext233233")) != 0) {
             fprintf(stderr, "Not a file system\n");
             free(buffer);
             return;
         }
         // 读取super block
-        memcpy(&fs->super_block, buffer + strlen("ext233233"), sizeof(SuperBlock));
+        memcpy(&fs->super_block, buffer + sizeof("ext233233"), sizeof(SuperBlock));
         
         diskInit(&fs->disk, fs->super_block.block_num, fs->super_block.block_size);
         diskWriteBlock(&fs->disk, 0, buffer);
@@ -214,9 +214,9 @@ void dataReadBlock(FileSystem* fs, int data_block_num, void* buf){
 }
 
 //将缓冲区 buf 中的数据写入文件系统中数据块号为 data_block_num 的数据块
-void dataWriteBlock(FileSystem* fs, int data_block_num, ritevoid* buf){
+void dataWriteBlock(FileSystem* fs, int data_block_num, void* buf){
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block + fs->super_block.inode_table_block;
-    dis(&fs->disk, data_block_num + offset, buf);
+    diskWriteBlock(&fs->disk, data_block_num + offset, buf);
 }
 
 //创建一个新的 inode 并返回其编号
@@ -240,7 +240,7 @@ int freeFirstIndex(FileSystem* fs, ui16 data_block, int allocated_num) {
     ui16* index = (ui16*)malloc(fs->super_block.block_size);
     dataReadBlock(fs, data_block, index);
     for (int i = 0; i < fs->super_block.block_size / sizeof(ui16) && allocated_num > 0; ++i) {
-        allocated_num -= freeBlock(fs, index[i]);
+        allocated_num -= freeBlock(fs, index[i]);//-1
     }
     free(index);
     freeBlock(fs, data_block);
@@ -637,8 +637,8 @@ Dentry createDentry(FileSystem* fs, ui16 father_inode_id, char* name, ui16 name_
     res.inode = createNewInode(fs, 04777);
     res.father_inode = father_inode_id;
     res.name_length = name_length;
-    res.name = malloc(name_length);
-    memcpy(res.name, name, name_length);
+    res.name = malloc(name_length + 1);
+    memcpy(res.name, name, name_length + 1);
 
     // 初始化子目录信息
     res.sub_dir_count = 2;
@@ -768,8 +768,8 @@ void format(FileSystem* fs) {
     //初始化boot 1块
     int offset = 0;
     char identifier[] = "ext233233";
-    memcpy(fs->disk.base, identifier, strlen(identifier));
-    offset += strlen(identifier);
+    memcpy(fs->disk.base, identifier, sizeof(identifier));
+    offset += sizeof(identifier);
     initSuperBlock(&fs->super_block);
     memcpy(fs->disk.base + offset, &fs->super_block, sizeof(SuperBlock));
     offset = fs->disk.block_size;
@@ -814,6 +814,51 @@ bool cd_(FileSystem* fs, ui16* cur_id , char* path) {
     } else {
         *cur_id = cur_dir_id;
         return true;
+    }
+}
+
+void cd(FileSystem* fs, char* path) {
+    // 解析路径，获取目录名和父目录名
+    if (path[0] == '/') {
+        char* tmp_path = malloc(strlen(path) + 1);
+        strcpy(tmp_path, path);
+
+        ui16 cur_dir_id = fs->root_inode;
+        char* token = strtok(tmp_path, "/");
+        while(token != NULL){
+            if (!cd_(fs, &cur_dir_id, token)) {
+                fprintf(stderr, "error: %s no dir exists\n", path);
+                free(tmp_path);
+                return;
+            }
+            token = strtok(NULL, "/");
+        }
+
+        fs->current_dir_inode = cur_dir_id;
+        free(fs->current_dir_path);
+        fs->current_dir_path = malloc(strlen(path) + 1);
+        strcpy(fs->current_dir_path, path);
+        free(tmp_path);
+    } else {
+        char* tmp_path = malloc(strlen(path) + 1);
+        strcpy(tmp_path, path);
+
+        ui16 cur_dir_id = fs->current_dir_inode;
+        char* token = strtok(tmp_path, "/");
+        while(token != NULL){
+            if (!cd_(fs, &cur_dir_id, token)) {
+                fprintf(stderr, "error: %s no dir exists\n", path);
+                free(tmp_path);
+                return;
+            }
+            token = strtok(NULL, "/");
+        }
+
+        fs->current_dir_inode = cur_dir_id;
+        free(fs->current_dir_path);
+        fs->current_dir_path = malloc(strlen(path) + 1);
+        strcpy(fs->current_dir_path, path);
+        free(tmp_path);
     }
 }
 
@@ -930,12 +975,43 @@ void rm(FileSystem* fs, char* path, int recursive){
     }
 }
 
-void ls(FileSystem* fs, char* path){
+void ls_(FileSystem *fs, ui16 dir_id){
+    Dentry dentry = readDentry(fs, dir_id);
     
-    if(path == NULL){
-        ls_(fs, fs->current_dir_inode);
-    }    
-    else if(path[0] == '/'){
-        ls_(fs, fs->root_inode);
+    for(int i = 0; i < dentry.sub_dir_count; i++){
+        printf("%s\n",dentry.sub_dir[i]);
     }
+
+    freeDentry(dentry);
 }
+
+void ls(FileSystem* fs, char* path){
+    ui16 cur_dir_id;
+    if(path[0] == NULL){
+        ls_(fs,fs->current_dir_inode);
+        return;
+    }
+    // ls /root/abc 怎么处理
+    if(path[0] == '/'){
+        cur_dir_id
+= fs->root_inode;    }
+
+    else {
+        cur_dir_id = fs->current_dir_inode;
+    }
+
+    char *token = strtok(path, "/");
+    while(token != NULL){
+        token = strtok(NULL, "/");
+        if (!dirGet(fs, cur_dir_id, token)) {
+                fprintf(stderr, "error: %s no dir exists\n", token);
+                return;
+        } 
+        cd_(fs, &cur_dir_id, token);
+    }
+    
+    ls_(fs, cur_dir_id);
+}
+
+
+
