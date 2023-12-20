@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include "disk.h"
 #include "config.h"
 //我要实现类似ext2的文件系统，帮我搞一段示意图
@@ -25,13 +26,24 @@ typedef struct SuperBlock {
 typedef int* InodeBitmap;
 typedef int* BlockBitmap;
 
+typedef struct Dentry {
+    unsigned short inode;                 // 2B   inode的编号
+    unsigned short father_inode;          // 2B   父目录inode编号
+    unsigned short name_length;           // 2B   文件名长度
+    char* name;                           // 8B   文件名
+    unsigned short sub_dir_count;         // 2B   子目录数
+    unsigned short* sub_dir_length;       // 8B   子目录名长度
+    unsigned short* sub_dir_inode;        // 8B   子目录inode编号
+    char** sub_dir;                       // 8B   子目录名
+} Dentry;                                 // 48B
+
 typedef struct FileSystem {
-    Disk* disk;
-    SuperBlock* super_block;
-    InodeBitmap* inode_bitmap;
-    BlockBitmap* block_bitmap;
-    Dentry* root;
-    Dentry* current;
+    Disk disk;
+    SuperBlock super_block;
+    InodeBitmap inode_bitmap;
+    BlockBitmap block_bitmap;
+    Dentry root;
+    Dentry current;
 } FileSystem;
 
 typedef struct INode {
@@ -47,19 +59,9 @@ typedef struct INode {
     time_t access_time;                   // 8B   访问时间
 } INode;                                  // 52B
 
-typedef struct Dentry {
-    unsigned short inode;                 // 2B   inode的编号
-    unsigned short father_inode;          // 2B   父目录inode编号
-    unsigned short name_length;           // 2B   文件名长度
-    char* name;                           // 8B   文件名
-    unsigned short sub_dir_count;         // 2B   子目录数
-    unsigned short* sub_dir_length;       // 8B   子目录名长度
-    unsigned short* sub_dir_inode;        // 8B   子目录inode编号
-    char** sub_dir;                       // 8B   子目录名
-} Dentry;                                 // 48B
-
 typedef struct UserOpenItem {
     INode inode;                          // 修改之后的文件inode, 用于保存变更, 也可用于判断是否打开
+
     int offset;                           // 文件内读写偏移量
     bool modify;                          // inode是否被修改
     bool open;                            // 文件是否被打开
@@ -85,10 +87,11 @@ void tbl_clear(UserOpenTable* tb);
 
 void tbl_remove(UserOpenTable* tb, int index);
 
-// file system
-void saveFs(void *ptr, size_t size, FILE *stream);
+// file system save to file
+void saveFs(FileSystem* fs, size_t size, FILE *stream);
 
-void loadFs(void *ptr, size_t size, FILE *stream);
+// file system load from file
+void loadFs(FileSystem* fs, size_t size, FILE *stream);
 
 // api
 
