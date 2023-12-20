@@ -15,45 +15,45 @@ typedef unsigned int ui32;
 typedef unsigned int ui16;
 
 typedef struct SuperBlock {
-    ui16 inode_bitmap_block;    // 2B   inode bitmap block number
-    ui16 block_bitmap_block;    // 2B   block bitmap block number
-    ui16 inode_table_block;     // 2B   inode table block number
-    ui16 data_block;            // 2B   data block number
-    ui16 inode_num;             // 2B   inode number
-    ui16 block_num;             // 2B   block number
-    ui16 inode_size;            // 2B   inode size
-    ui16 block_size;            // 2B   block size
+    ui16 inode_bitmap_block;        // 2B   inode bitmap block number
+    ui16 block_bitmap_block;        // 2B   block bitmap block number
+    ui16 inode_table_block;         // 2B   inode table block number
+    ui16 data_block;                // 2B   data block number
+    ui16 inode_num;                 // 2B   inode number
+    ui16 block_num;                 // 2B   block number
+    ui16 inode_size;                // 2B   inode size
+    ui16 block_size;                // 2B   block size
 } SuperBlock;
 
 void initSuperBlock(SuperBlock* sb);
 
 typedef struct INode {
-    ui16 inode_number;          // 2B   inode的编号
-    ui16 size;                  // 2B   文件大小
-    ui16 direct_block[10];      // 16B  直接块
-    ui16 first_inedxed_block;   // 2B   一级索引块
-    ui16 second_indexed_block;  // 2B   二级索引块 
-    ui16 type;                  // 2B   文件属性 dir/file/link rwxrwxrwx
-    ui16 link_count;            // 2B   链接数
-    time_t created_time;                  // 8B   创建时间
-    time_t modified_time;                 // 8B   修改时间
-    time_t access_time;                   // 8B   访问时间
-} INode;                                  // 56B
+    ui16 inode_number;              // 2B   inode的编号
+    ui16 size;                      // 2B   文件大小
+    ui16 direct_block[10];          // 16B  直接块
+    ui16 first_inedxed_block;       // 2B   一级索引块
+    ui16 second_indexed_block;      // 2B   二级索引块 
+    ui16 type;                      // 2B   文件属性 dir/file/link rwxrwxrwx
+    ui16 link_count;                // 2B   链接数
+    time_t created_time;            // 8B   创建时间
+    time_t modified_time;           // 8B   修改时间
+    time_t access_time;             // 8B   访问时间
+} INode;                            // 56B
 
 
 typedef unsigned int* InodeBitmap;
 typedef unsigned int* BlockBitmap;
 
 typedef struct Dentry {
-    ui16 inode;                 // 2B   inode的编号
-    ui16 father_inode;          // 2B   父目录inode编号
-    ui16 name_length;           // 2B   文件名长度
-    char* name;                           // 8B   文件名
-    ui16 sub_dir_count;         // 2B   子目录数
-    ui16* sub_dir_length;       // 8B   子目录名长度
-    ui16* sub_dir_inode;        // 8B   子目录inode编号
-    char** sub_dir;                       // 8B   子目录名
-} Dentry;                                 // 48B
+    ui16 inode;                     // 2B   inode的编号
+    ui16 father_inode;              // 2B   父目录inode编号
+    ui16 name_length;               // 2B   文件名长度
+    char* name;                     // 8B   文件名
+    ui16 sub_dir_count;             // 2B   子目录数
+    ui16* sub_dir_inode;            // 8B   子目录inode编号
+    ui16* sub_dir_length;           // 8B   子目录名长度
+    char** sub_dir;                 // 8B   子目录名
+} Dentry;                           // 48B
 
 typedef struct FileSystem {
     Disk disk;
@@ -111,7 +111,7 @@ void mkdir(FileSystem* fs, char* path);
 // recursive = 0: rm file or empty dir; recursive = 1: rm dir and all its subdirs
 void rm(FileSystem* fs, char* path, int recursive); 
 
-void saveDentry(FileSystem* fs,Dentry* dentr, ui16 inode_id);
+void saveDentry(FileSystem* fs, Dentry* dentry);
 // my_ls
 void ls(FileSystem* fs, char* path);
 

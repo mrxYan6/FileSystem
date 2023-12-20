@@ -5,8 +5,10 @@
 #include "disk.h"
 
 void diskInit(Disk* disk, int block_size, int block_num){
-    disk->block_size=block_size;
-    disk->block_num=block_num;
+    disk->block_size = block_size;
+    disk->block_num = block_num;
+    disk->base = (char*)malloc(block_size * block_num);
+    memset(disk->base, 0, block_size * block_num);
 }
 
 //读一整块

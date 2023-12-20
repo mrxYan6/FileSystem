@@ -36,7 +36,7 @@ void loadFs(FileSystem* fs, FILE *stream) {
         // 读取inode bitmap
         fs->inode_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
         for (int i = 0; i < fs->super_block.inode_bitmap_block; i++) {
-            // 一块一块读取
+            // 一块一块读取 
             diskReadBlock(&fs->disk, offset, fs->inode_bitmap + i);
             offset++;
         }
@@ -66,7 +66,7 @@ void initSuperBlock(SuperBlock* sb) {
 
 const int size_Byte = 32;
 
-//均为数据段的块号
+//释放文件系统中指定块号的数据块
 int freeBlock(FileSystem* fs, ui16 block_num) {
     assert(block_num >= 0 && block_num < fs->super_block.data_block);
     int int_number = block_num >> 5;
@@ -75,7 +75,7 @@ int freeBlock(FileSystem* fs, ui16 block_num) {
     return 1;
 }
 
-//均为数据段的块号
+//占用文件系统中指定块号的数据块，检查块号的合法性，然后计算出在位图中的位置，将相应位置的位设置为 1
 void occupyBlock(FileSystem* fs, ui16 block_num) {
     assert(block_num>=0&&block_num<fs->super_block.data_block);   
     int int_number = block_num >> 5;
@@ -83,7 +83,7 @@ void occupyBlock(FileSystem* fs, ui16 block_num) {
     fs->block_bitmap[int_number]|=(1<<bit_number);
 }
 
-//均为数据段的块号
+//均用于获取文件系统中第一个空闲的数据块号
 ui16 getFirstBlock(FileSystem* fs) {
     ui16 ret;
     int int_number,bit_number;
@@ -98,6 +98,7 @@ ui16 getFirstBlock(FileSystem* fs) {
     return (ui16)-1;
 }
 
+//释放文件系统中指定的 inode
 void freeInode(FileSystem* fs, ui16 inode_num) {
     assert(inode_num >= 0 && inode_num < fs->super_block.inode_num);   
     int int_number = inode_num >> 5;
@@ -105,6 +106,7 @@ void freeInode(FileSystem* fs, ui16 inode_num) {
     fs->inode_bitmap[int_number] &= ~(1 << bit_number);
 }
 
+//占用文件系统中指定的 inode,检查 inode 号的合法性，然后计算出在位图中的位置，将相应位置的位设置为 1
 void occupyInode(FileSystem* fs, ui16 inode_num) {
     assert(inode_num >= 0 && inode_num < fs->super_block.inode_num);   
     int int_number = inode_num >> 5;
@@ -112,6 +114,7 @@ void occupyInode(FileSystem* fs, ui16 inode_num) {
     fs->inode_bitmap[int_number] |= (1 << bit_number);
 }
 
+//用于获取文件系统中第一个空闲的 inode 号
 ui16 getFirstInode(FileSystem* fs) {
     ui16 ret;
     int int_number,bit_number;
@@ -126,6 +129,7 @@ ui16 getFirstInode(FileSystem* fs) {
     return (ui16)-1;
 }
 
+//从文件系统中读取指定 inode 号的 inode 数据，跨块则分别读取两个块的数据，然后合并到 inode 结构体中,如果不跨块，则直接读取相应块的数据
 INode readInode(FileSystem* fs, ui16 inode_num) {
     INode inode;
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block;
@@ -163,6 +167,7 @@ INode readInode(FileSystem* fs, ui16 inode_num) {
     return inode;
 }
 
+//将指定 inode 号的 inode 数据写入到文件系统中，跨块同上
 void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block;
     occupyInode(fs, inode_num);
@@ -202,16 +207,19 @@ void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
     }
 }
 
+//从文件系统中读取数据块号为 data_block_num 的数据块到缓冲区 buf 中
 void dataReadBlock(FileSystem* fs, int data_block_num, void* buf){
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block + fs->super_block.inode_table_block;
     diskReadBlock(&fs->disk, data_block_num + offset, buf);
 }
 
-void dataWriteBlock(FileSystem* fs, int data_block_num, void* buf){
+//将缓冲区 buf 中的数据写入文件系统中数据块号为 data_block_num 的数据块
+void dataWriteBlock(FileSystem* fs, int data_block_num, ritevoid* buf){
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block + fs->super_block.inode_table_block;
-    diskReadBlock(&fs->disk, data_block_num + offset, buf);
+    dis(&fs->disk, data_block_num + offset, buf);
 }
 
+//创建一个新的 inode 并返回其编号
 ui16 createNewInode(FileSystem* fs, ui16 type) {
     INode res;
     ui16 inode_num = getFirstInode(fs);
@@ -227,6 +235,7 @@ ui16 createNewInode(FileSystem* fs, ui16 type) {
     return res.inode_number;
 }
 
+//释放一级索引块及其指向的数据块
 int freeFirstIndex(FileSystem* fs, ui16 data_block, int allocated_num) {
     ui16* index = (ui16*)malloc(fs->super_block.block_size);
     dataReadBlock(fs, data_block, index);
@@ -238,6 +247,7 @@ int freeFirstIndex(FileSystem* fs, ui16 data_block, int allocated_num) {
     return allocated_num;
 }
 
+//释放二级索引块及其指向的数据块及其指向的一级索引块和数据块
 int freeSecondIndex(FileSystem* fs, ui16 data_block, int allocated_num) {
     ui16* index = (ui16*)malloc(fs->super_block.block_size);
     dataReadBlock(fs, data_block, index);
@@ -249,6 +259,7 @@ int freeSecondIndex(FileSystem* fs, ui16 data_block, int allocated_num) {
     return allocated_num;
 }
 
+//释放一个 inode 占用的所有数据块
 int fsFree(FileSystem* fs, INode* inode) {
     int allocated_num = (inode->size + fs->super_block.block_size - 1) / fs->super_block.block_size;
     for (int i = 0; i < 10 && allocated_num > 0; ++i) {
@@ -267,6 +278,7 @@ int fsFree(FileSystem* fs, INode* inode) {
     return !allocated_num;
 }
 
+//为一个 inode 分配数据块以满足指定的大小
 void fsAllocate(FileSystem*fs, INode* inode, int size) {
     int old_block = inode->size / fs->super_block.block_size;   // 申请前的块数
     int new_size = size + inode->size;
@@ -362,11 +374,13 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
 
 }
 
+//重新分配 inode 占用的数据块
 void fsReAllocate(FileSystem* fs, INode* inode, int size) {
     fsFree(fs, inode);
     fsAllocate(fs, inode, size);
 }
 
+//从文件系统中读取指定 inode 的数据
 void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
     if (offset + size > inode->size) {
         fprintf(stderr, "error: index over flow\n");
@@ -451,6 +465,7 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
 
 }
 
+//向文件系统中写入指定 inode 的数据
 void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
     // 参考fsRead
     if (offset + size > inode->size) {
@@ -538,55 +553,207 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
     free(buffer);
 }
 
-// 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode
-void saveDentry(FileSystem* fs, Dentry* dentry, ui16 inode_id) {
-    size_t buffer_size = 0;
-    char* ptr = buffer;
-    memcpy(ptr,&dentry->inode,sizeof(ui16));
-    ptr += buffer_size += sizeof(ui16);
-    memcpy(ptr,&dentry->father_inode,sizeof(ui16));
-    ptr += buffer_size += sizeof(ui16);
-    memcpy(ptr,&dentry->name_length,sizeof(ui16));
-    ptr += buffer_size += sizeof(ui16);
-    memcpy(ptr,dentry->name,dentry->name_length);
-    ptr += buffer_size += dentry->name_length;
-    memcpy(ptr,&dentry->sub_dir_count,sizeof(ui16));
-    ptr += buffer_size += sizeof(ui16);
-    for(int i=0; i<dentry->sub_dir_count; i++){
-        memcpy(ptr,dentry->sub_dir_inode+i*sizeof(ui16),sizeof(ui16));
-        ptr += buffer_size += sizeof(ui16);
-        memcpy(ptr,dentry->sub_dir_length+i*sizeof(ui16),sizeof(ui16));
-        ptr += buffer_size += sizeof(ui16);
-        memcpy(ptr,dentry->sub_dir[i],dentry->sub_dir_length[i]);
-        ptr += buffer_size += dentry->sub_dir_length[i];
-    }
-    INode inode = readInode(fs,inode_id);
-    if(inode.size < buffer_size){
-        fprintf(stderr,"too big dentry");
-        free(buffer);
-        return;
-    }
-    fswrite(fs, &inode, 0, buffer, buffer_size);
-    
-    free(buffer);
-    return;
+// 从 src 复制 size 字节的数据到 *dst，并更新 *dst 指向下一个位置，处理数据的序列化
+void receiveAndShift(void** dst, void* src, int size) {
+    memcpy(*dst, src, size);
+    *dst += size;
 }
 
-void mkroot(FileSystem* fs, char* path) {
-    Dentry root;
-    root.inode = 0;
-    root.name = "/";
-    root.name_length = 1;
-    root.father_inode = 0;
-    root.sub_dir_count = 0;
-    root.sub_dir = NULL;
-    root.sub_dir_inode = NULL;
-    root.sub_dir_length = NULL;
+// 将 *src 指向的数据复制到 dst，然后更新 *src 指向下一个位置，处理数据的反序列化
+void sendAndShift(void* dst, void** src, int size) {
+    memcpy(dst, *src, size);
+    *src += size;
+}
 
-    fs->current_dir_path = "/";
+//根据给定的 inode ID 从文件系统中读取目录条目
+Dentry readDentry(FileSystem* fs, ui16 inode_id) {
+    Dentry res;
+    INode inode = readInode(fs, inode_id);
+    if (((inode.type >> 9) & 7) != 4) {
+        fprintf(stderr, "error: not a directory\n");
+        return res;
+    }
+    int offset = 0;
+    int size = inode.size;
+    void* buffer = malloc(size);
+    // 从文件系统中读取数据到 buffer
+    fsRead(fs, &inode, offset, buffer, size);
+    // memcpy(&res.inode, buffer, sizeof(ui16));
+    // offset += sizeof(ui16);
+     // 解析数据并填充 Dentry 结构
+    sendAndShift(&res.inode, &buffer, sizeof(ui16));
+    sendAndShift(&res.father_inode, &buffer, sizeof(ui16));
+    sendAndShift(&res.name_length, &buffer, sizeof(ui16));
+    res.name = malloc(res.name_length);
+    sendAndShift(res.name, &buffer, res.name_length);
+    sendAndShift(&res.sub_dir_count, &buffer, sizeof(ui16));
+
+    res.sub_dir_inode = malloc(res.sub_dir_count * sizeof(ui16));
+    res.sub_dir_length = malloc(res.sub_dir_count * sizeof(ui16));
+    res.sub_dir = malloc(res.sub_dir_count * sizeof(char*));
+
+    for (int i = 0; i < res.sub_dir_count; ++i) {
+        sendAndShift(res.sub_dir_inode + i, &buffer, sizeof(ui16));
+        sendAndShift(res.sub_dir_length + i, &buffer, sizeof(ui16));
+        res.sub_dir[i] = malloc(res.sub_dir_length[i]);
+        sendAndShift(res.sub_dir[i], &buffer, res.sub_dir_length[i]);
+    }
+    return res;
+}
+
+// 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode，将给定的 Dentry 结构序列化，并将其保存到对应的 inode 中
+void saveDentry(FileSystem* fs, Dentry* dentry) {
+    // 计算需要的缓冲区大小
+    size_t buffer_size = sizeof(ui16)*4+ dentry->name_length + 2 * dentry->sub_dir_count * sizeof(ui16);
+    for(int i=0; i<dentry->sub_dir_count; i++){
+        buffer_size += dentry->sub_dir_length[i];
+    }
+    // 分配缓冲区
+    void* buffer = malloc(buffer_size);
+    void* ptr = buffer;
+    // 序列化数据到缓冲区
+    recieveAndShift(&ptr, &dentry->inode, sizeof(ui16));
+    receiveAndShift(&ptr, &dentry->father_inode, sizeof(ui16));
+    receiveAndShift(&ptr, &dentry->name_length, sizeof(ui16));
+    receiveAndShift(&ptr, dentry->name, dentry->name_length);
+    receiveAndShift(&ptr, &dentry->sub_dir_count, sizeof(ui16));
+    for(int i = 0; i < dentry->sub_dir_count; i++){
+        receiveAndShift(&ptr, dentry->sub_dir_inode+i*sizeof(ui16), sizeof(ui16));
+        receiveAndShift(&ptr, dentry->sub_dir_length+i*sizeof(ui16), sizeof(ui16));
+        receiveAndShift(&ptr, dentry->sub_dir[i], dentry->sub_dir_length[i]);
+    }
+    // 读取对应的inode，将缓冲区写入文件系统
+    INode inode = readInode(fs, dentry->inode);
+    fsWrite(fs, &inode, 0, buffer, buffer_size);
+    writeInode(fs, inode.inode_number, &inode);
     
-    fs->root_inode = getFirstInode(fs);
-    fs->current_dir_inode = fs->root_inode = createNewInode(fs, 04777);
+    free(buffer);
+}
+
+//创建新的 Dentry，为当前目录（.）和父目录（..）初始化信息
+Dentry createDentry(FileSystem* fs, ui16 father_inode_id, char* name, ui16 name_length) {
+    Dentry res;
+    // 创建新的inode
+    res.inode = createNewInode(fs, 04777);
+    res.father_inode = father_inode_id;
+    res.name_length = name_length;
+    res.name = malloc(name_length);
+    memcpy(res.name, name, name_length);
+
+    // 初始化子目录信息
+    res.sub_dir_count = 2;
+    res.sub_dir_inode = malloc(2 * sizeof(ui16));
+    res.sub_dir_length = malloc(2 * sizeof(ui16));
+    res.sub_dir = malloc(2 * sizeof(char*));
+
+    // 初始化当前目录（.）的信息
+    res.sub_dir = malloc(2 * sizeof(char*));
+    res.sub_dir_inode[0] = res.inode;
+    res.sub_dir_length[0] = 1;
+    res.sub_dir[0] = malloc(1);
+    memcpy(res.sub_dir[0], ".", 1);
+
+    // 初始化父目录（..）的信息
+    res.sub_dir_inode[1] = father_inode_id;
+    res.sub_dir_length[1] = 2;
+    res.sub_dir[1] = malloc(2);
+    memcpy(res.sub_dir[1], "..", 2);
+
+    // 将Dentry保存到文件系统
+    saveDentry(fs, &res);
+    return res;
+}
+
+//释放 Dentry 结构中动态分配的内存
+void freeDentry(Dentry* dir) {
+    free(dir->name);
+    for (int i = 0; i < dir->sub_dir_count; ++i) {
+        free(dir->sub_dir[i]);
+    }
+    free(dir->sub_dir);
+    free(dir->sub_dir_inode);
+    free(dir->sub_dir_length);
+}
+
+//将一个子目录添加到父目录中
+void dentryAddSon(Dentry* father, Dentry* son) {
+    ui16* new_inode = malloc((father->sub_dir_count + 1) * sizeof(ui16));
+    ui16* new_sub_dir_length = malloc((father->sub_dir_count + 1) * sizeof(ui16));
+    char** new_sub_dir = malloc((father->sub_dir_count + 1) * sizeof(char*));
+    
+    memcpy(new_inode, father->sub_dir_inode, father->sub_dir_count * sizeof(ui16));
+    new_inode[father->sub_dir_count] = son->inode;
+    memcpy(new_sub_dir_length, father->sub_dir_length, father->sub_dir_count * sizeof(ui16));
+    new_sub_dir_length[father->sub_dir_count] = son->name_length;
+    memcpy(new_sub_dir, father->sub_dir, father->sub_dir_count * sizeof(char*));
+    for (int i = 0; i < father->sub_dir_count; ++i) {
+        new_sub_dir[i] = malloc(father->sub_dir_length[i]);
+        memcpy(new_sub_dir[i], father->sub_dir[i], father->sub_dir_length[i]);
+    }
+    new_sub_dir[father->sub_dir_count] = malloc(son->name_length);
+    memcpy(new_sub_dir[father->sub_dir_count], son->name, son->name_length);
+
+    free(father->sub_dir_inode);
+    free(father->sub_dir_length);
+    for (int i = 0; i < father->sub_dir_count; ++i) {
+        free(father->sub_dir[i]);
+    }
+    free(father->sub_dir);
+
+    father->sub_dir_inode = new_inode;
+    father->sub_dir_length = new_sub_dir_length;
+    father->sub_dir = new_sub_dir;
+    father->sub_dir_count++;
+}
+
+void dentryDeleteSon(FileSystem* fs, ui16 father_id, ui16 inode_id) {
+    Dentry father = readDentry(fs, father_id);
+    int index = -1;
+    for (int i = 0; i < father.sub_dir_count; ++i) {
+        if (father.sub_dir_inode[i] == inode_id) {
+            index = i;
+            break;
+        }
+    }
+    if (index == -1) {
+        fprintf(stderr, "error: no such son\n");
+        return;
+    }
+
+    ui16* new_inode = malloc((father.sub_dir_count - 1) * sizeof(ui16));
+    ui16* new_sub_dir_length = malloc((father.sub_dir_count - 1) * sizeof(ui16));
+    char** new_sub_dir = malloc((father.sub_dir_count - 1) * sizeof(char*));
+    
+    memcpy(new_inode, father.sub_dir_inode, index * sizeof(ui16));
+    memcpy(new_inode + index, father.sub_dir_inode + index + 1, (father.sub_dir_count - index - 1) * sizeof(ui16));
+    memcpy(new_sub_dir_length, father.sub_dir_length, index * sizeof(ui16));
+    memcpy(new_sub_dir_length + index, father.sub_dir_length + index + 1, (father.sub_dir_count - index - 1) * sizeof(ui16));
+    memcpy(new_sub_dir, father.sub_dir, index * sizeof(char*));
+    memcpy(new_sub_dir + index, father.sub_dir + index + 1, (father.sub_dir_count - index - 1) * sizeof(char*));
+
+    free(father.sub_dir_inode);
+    free(father.sub_dir_length);
+    for (int i = 0; i < father.sub_dir_count; ++i) {
+        free(father.sub_dir[i]);
+    }
+    free(father.sub_dir);
+
+    father.sub_dir_inode = new_inode;
+    father.sub_dir_length = new_sub_dir_length;
+    father.sub_dir = new_sub_dir;
+    father.sub_dir_count--;
+}
+
+void deleteDnetry(FileSystem* fs, ui16 inode_id) {
+    Dentry dentry = readDentry(fs, inode_id);
+    if (dentry.sub_dir_count > 2) {
+        fprintf(stderr, "error: directory is not empty\n");
+        return;
+    }
+    dentryDeleteSon(fs, dentry.father_inode, inode_id);
+    INode inode = readInode(fs, inode_id);
+    fsFree(fs, &inode);
+    freeInode(fs, inode_id);
 }
 
 void format(FileSystem* fs) {
@@ -613,12 +780,162 @@ void format(FileSystem* fs) {
     // 初始化block bitmap 放在内存
     fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
 
-    mkroot(fs, "/");
+    createDentry(fs, 0, "/", 1);
 }
 
-void 
+//无斜杠分割的路径
+bool cd_(FileSystem* fs, ui16* cur_id , char* path) {
+    ui16 cur_dir_id = *cur_id;
+    INode cur_inode = readInode(fs, cur_dir_id);
+    if (((cur_inode.type >> 9) & 7) != 4) {
+        // fprintf(stderr, "error: not a directory\n");
+        return false;
+    }
+
+    Dentry dentry = readDentry(fs, cur_dir_id);
+    for (int i = 0; i < dentry.sub_dir_count; ++i) {
+        if (strcmp(path, dentry.sub_dir[i]) == 0) {
+            cur_dir_id = dentry.sub_dir_inode[i];
+            break;
+        }
+    }
+
+    freeDentry(&dentry);
+
+    if (*cur_id == cur_dir_id) {
+        // fprintf(stderr, "error: %s no such file or directory\n", path);
+        return false;
+    }
+
+    INode inode = readInode(fs, cur_dir_id);
+    if (((inode.type >> 9) & 7) != 4) {
+        // fprintf(stderr, "error: %s is not a directory\n", path);
+        return false;
+    } else {
+        *cur_id = cur_dir_id;
+        return true;
+    }
+}
+
+//无斜杠分割的路径
+int dirGetType(FileSystem* fs, ui16 cur_id, char* paht) {
+    ui16 cur_dir_id = cur_id;
+    INode cur_inode = readInode(fs, cur_dir_id);
+    if (((cur_inode.type >> 9) & 7) != 4) {
+        fprintf(stderr, "error: not a directory\n");
+        return false;
+    }
+
+    Dentry dentry = readDentry(fs, cur_dir_id);
+    for (int i = 0; i < dentry.sub_dir_count; ++i) {
+        if (strcmp(path, dentry.sub_dir[i]) == 0) {
+            cur_dir_id = dentry.sub_dir_inode[i];
+            break;
+        }
+    }
+
+    freeDentry(&dentry);
+
+    if (*cur_id == cur_dir_id) {
+        return 0;
+    } else {
+        INode inode = readInode(fs, cur_dir_id);
+        return inode.type >> 9;
+    }
+}
+
+void mkdir_(FileSystem* fs, char* path, ui16 cur_dir_id) {
+    Dentry dentry = readDentry(fs, cur_dir_id);
+
+    char* last_token = NULL;
+    char* token = strtok(path, "/");
+
+    while(token != NULL){
+        last_token = token;
+        token = strtok(NULL, "/");
+
+        if (token == NULL) {
+            //创建目录
+            if (dirGet(fs, cur_dir_id, last_token)) {
+                fprintf(stderr, "error: %s already exists\n", last_token);
+                return;
+            } else {
+                Dentry son = createDentry(fs, cur_dir_id, last_token, strlen(last_token));
+                dentryAddSon(&dentry, &son);
+                saveDentry(fs, &dentry);
+                freeDentry(&dentry);           
+                dentry = son;
+                cur_dir_id = dentry.inode;
+            }
+        } else {
+            cd_(fs, &cur_dir_id, last_token);
+        }
+    }
+}
+
+void mkdir(FileSystem* fs, char* path) {
+    // 解析路径，获取目录名和父目录名
+    if (path[0] == '/') {
+        mkdir_(fs, path, fs->root_inode);
+    } else {
+        mkdir_(fs, path, fs->current_dir_inode);
+    }
+}
+
+void deleteFile(FileSystem* fs, ui16 dir_id, ui16 file_id) {
+    INode fileInode = readInode(fs, file_id);
+    
+    if (((fileInode.type >> 9) & 7) == 4) {
+        fprintf(stderr, "error: %s is a directory\n");
+        return;
+    }
+
+    dentryDeleteSon(fs, dir_id, file_id);
+    if (fileInode.link_count == 1) {
+        fsFree(fs, &fileInode);
+        freeInode(fs, file_id);
+    } else {
+        fileInode.link_count--;
+        writeInode(fs, file_id, &fileInode);
+    }   
+}
+
+void rm_(FileSystem* fs, ui16 father_dir_id, ui16 cur_dir_id, int recursive) {
+    INode cur_inode = readInode(fs, cur_dir_id);
+    if (((cur_inode.type >> 9) & 7) == 4) {
+        if (recursive) {
+            Dentry dentry = readDentry(fs, cur_dir_id);
+            while (dentry.sub_dir_count > 2) {
+                rm_(fs, cur_dir_id, dentry.sub_dir_inode[dentry.sub_dir_count - 1], recursive);
+            }
+            deleteDnetry(fs, cur_dir_id);
+            return;
+        } else {
+            fprintf(stderr, "cannot rm a directory, please use -r\n");
+            return;
+        }
+    } else {
+        // file or soft link
+        deleteFile(fs, father_dir_id, cur_dir_id);
+    }
+}
+
 
 void rm(FileSystem* fs, char* path, int recursive){
-    
+    // 解析路径，获取目录名和父目录名
+    if (path[0] == '/') {
+        rm_(fs, path, fs->root_inode, recursive);
+    } else {
+        rm_(fs, path, fs->current_dir_inode, recursive);
+    }
+}
 
+void ls(FileSystem* fs, char* path){
+    
+    if(path == NULL){
+        ls_(fs, fs->current_dir_inode);
+    }    
+    else if(path[0] == '/'){
+        ls_(fs, fs->root_inode);
+    }
 }
