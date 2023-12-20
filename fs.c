@@ -367,20 +367,6 @@ void fsReAllocate(FileSystem* fs, INode* inode, int size) {
     fsAllocate(fs, inode, size);
 }
 
-void fsWrite(FileSystem*fs, INode* inode, int offset, void* buffer, int size) {
-    // 参考fsRead
-    if (offset + size > inode->size) {
-        fprintf(stderr, "error: index over flow\n");
-        return;    
-    }
-    
-    int begin = offset;
-    int end = offset + size - 1;
-    int begin_block = begin / fs->super_block.block_size;
-    int end_block = end / fs->super_block.block_size;
-    
-}
-
 void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
     if (offset + size > inode->size) {
         fprintf(stderr, "error: index over flow\n");
@@ -465,27 +451,125 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
 
 }
 
-// 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode
-void saveDentry(FileSystem* fs, Dentry* dentr, ui16 inode_id) {
-    size_t buffer_size = BLOCK_SIZE;
+void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
+    // 参考fsRead
+    if (offset + size > inode->size) {
+        fsAllocate(fs, inode, offset + size - inode->size);
+    }
+    int context_ptr = 0;
+
+    const int block_size = fs->super_block.block_size;
     
-    char* beffer = malloc(buffer_size);
-    if(beffer == NULL){
-        fprintf(stderr,"Error:Can't find a memory to save!");
-        return;
+    void* buffer = malloc(block_size);
+
+    int begin = offset;
+    int end = offset + size - 1;
+    int cur = begin;
+
+    int begin_block = begin / block_size;
+    int end_block = end / block_size;
+    int cur_block = begin_block;
+
+    int block_base = 0;
+
+    if (cur_block < 10 && cur_block <= end_block) {
+        // 在直接块内
+        for (int i = cur_block; i < 10 && cur_block <= end_block; ++i) {
+            dataReadBlock(fs, inode->direct_block[i], buffer);
+            int begin = cur % block_size;
+            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+            memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+            dataWriteBlock(fs, inode->direct_block[i], buffer);
+            context_ptr += end - begin + 1;
+            cur_block++;
+            cur += end - begin + 1;
+        }
     }
     
+
+    block_base += 10;
+
+    const int index_pre_block = block_size / sizeof(ui16);
+
+    if (cur_block >= block_base && cur_block <= end_block) {
+        // 在一级索引块内
+        ui16* first_index = (ui16*)malloc(block_size);
+        dataReadBlock(fs, inode->first_inedxed_block, first_index);
+        for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
+            dataReadBlock(fs, first_index[i], buffer);
+            int begin = cur % block_size;
+            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+            memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+            dataWriteBlock(fs, first_index[i], buffer);
+            context_ptr += end - begin + 1;
+            cur_block++;
+            cur += end - begin + 1;
+        }
+        free(first_index);
+    }
+
+    block_base += index_pre_block;
+    
+    if (cur_block >= block_base && cur_block <= end_block) {
+        ui16* second_index = (ui16*)malloc(fs->super_block.block_size);
+        dataReadBlock(fs, inode->second_indexed_block, second_index);
+
+        for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
+            ui16* first_index = (ui16*)malloc(fs->super_block.block_size);
+            dataReadBlock(fs, second_index[i], first_index);
+            for (int j = cur_block - block_base - i * index_pre_block; j < index_pre_block && cur_block <= end_block; ++j) {
+                dataReadBlock(fs, first_index[j], buffer);
+                int begin = cur % block_size;
+                int end = (cur_block == end_block) ? end % block_size : block_size - 1;
+                memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+                dataWriteBlock(fs, first_index[i], buffer);
+                context_ptr += end - begin + 1;
+                cur_block++;
+                cur += end - begin + 1;
+            }
+            dataWriteBlock(fs, second_index[i], first_index);
+            free(first_index);
+        }
+
+        dataWriteBlock(fs, inode->second_indexed_block, second_index);
+        free(second_index);
+    }
+
+    free(buffer);
+}
+
+// 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode
+void saveDentry(FileSystem* fs, Dentry* dentry, ui16 inode_id) {
+    size_t buffer_size = 0;
     char* ptr = buffer;
     memcpy(ptr,&dentry->inode,sizeof(ui16));
-    ptr += sizeof(ui16);
+    ptr += buffer_size += sizeof(ui16);
     memcpy(ptr,&dentry->father_inode,sizeof(ui16));
-    ptr += sizeof(ui16);
+    ptr += buffer_size += sizeof(ui16);
     memcpy(ptr,&dentry->name_length,sizeof(ui16));
-    ptr += sizeof(ui16);
-    memset(ptr,)
+    ptr += buffer_size += sizeof(ui16);
+    memcpy(ptr,dentry->name,dentry->name_length);
+    ptr += buffer_size += dentry->name_length;
     memcpy(ptr,&dentry->sub_dir_count,sizeof(ui16));
-    ptr += sizeof(ui16);
-
+    ptr += buffer_size += sizeof(ui16);
+    for(int i=0; i<dentry->sub_dir_count; i++){
+        memcpy(ptr,dentry->sub_dir_inode+i*sizeof(ui16),sizeof(ui16));
+        ptr += buffer_size += sizeof(ui16);
+        memcpy(ptr,dentry->sub_dir_length+i*sizeof(ui16),sizeof(ui16));
+        ptr += buffer_size += sizeof(ui16);
+        memcpy(ptr,dentry->sub_dir[i],dentry->sub_dir_length[i]);
+        ptr += buffer_size += dentry->sub_dir_length[i];
+    }
+    INode inode = readInode(fs,inode_id);
+    if(inode.size < buffer_size){
+        fprintf(stderr,"too big dentry");
+        free(buffer);
+        return;
+    }
+    fswrite(fs, &inode, 0, buffer, buffer_size);
+    
+    free(buffer);
+    return;
 }
 
 void mkroot(FileSystem* fs, char* path) {
@@ -531,6 +615,8 @@ void format(FileSystem* fs) {
 
     mkroot(fs, "/");
 }
+
+void 
 
 void rm(FileSystem* fs, char* path, int recursive){
     
