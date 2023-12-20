@@ -23,6 +23,21 @@ typedef struct SuperBlock {
     unsigned short block_size;            // 2B   block size
 } SuperBlock;
 
+void initSuperBlock(SuperBlock* sb);
+
+typedef struct INode {
+    unsigned short inode_number;          // 2B   inode的编号
+    unsigned short size;                  // 2B   文件大小
+    unsigned short direct_block[10];      // 16B  直接块
+    unsigned short first_inedxed_block;   // 2B   一级索引块
+    unsigned short second_indexed_block;  // 2B   二级索引块 
+    unsigned short type;                  // 2B   文件属性 dir/file/link rwxrwxrwx
+    unsigned short link_count;            // 2B   链接数
+    time_t created_time;                  // 8B   创建时间
+    time_t modified_time;                 // 8B   修改时间
+    time_t access_time;                   // 8B   访问时间
+} INode;                                  // 56B
+
 typedef int* InodeBitmap;
 typedef int* BlockBitmap;
 
@@ -42,22 +57,10 @@ typedef struct FileSystem {
     SuperBlock super_block;
     InodeBitmap inode_bitmap;
     BlockBitmap block_bitmap;
-    Dentry root;
-    Dentry current;
+    unsigned short root_inode;
+    unsigned short current_dir_inode;
+    char* current_dir_path;
 } FileSystem;
-
-typedef struct INode {
-    unsigned short inode_number;          // 2B   inode的编号
-    unsigned short size;                  // 2B   文件大小
-    unsigned short direct_block[10];      // 16B  直接块
-    unsigned short first_inedxed_block;   // 2B   一级索引块
-    unsigned short second_indexed_block;  // 2B   二级索引块 
-    unsigned short type;                  // 2B   文件类型 dir/file/link rwxrwxrwx
-    unsigned short link_count;            // 2B   链接数
-    time_t created_time;                  // 8B   创建时间
-    time_t modified_time;                 // 8B   修改时间
-    time_t access_time;                   // 8B   访问时间
-} INode;                                  // 52B
 
 typedef struct UserOpenItem {
     INode inode;                          // 修改之后的文件inode, 用于保存变更, 也可用于判断是否打开
@@ -88,31 +91,31 @@ void tbl_clear(UserOpenTable* tb);
 void tbl_remove(UserOpenTable* tb, int index);
 
 // file system save to file
-void saveFs(FileSystem* fs, size_t size, FILE *stream);
+void saveFs(FileSystem* fs, FILE *stream);
 
 // file system load from file
-void loadFs(FileSystem* fs, size_t size, FILE *stream);
+void loadFs(FileSystem* fs, FILE *stream);
 
 // api
 
 // my_format
-void format();
+void format(FileSystem* fs);
 
 // my_mkdir
-void mkdir(Dentry* d, char* path);
+void mkdir(FileSystem* fs, char* path);
 
 // my_rm + my_rmdir
 // recursive = 0: rm file or empty dir; recursive = 1: rm dir and all its subdirs
-void rm(Dentry* d, char* path, int recursive); 
+void rm(FileSystem* fs, char* path, int recursive); 
 
 // my_ls
-void ls(Dentry* d, char* path);
+void ls(FileSystem* fs, char* path);
 
 // my_cd
-void cd(Dentry* d, char* path);
+void cd(FileSystem* fs, char* path);
 
 // my_create
-void touch(Dentry* d, char* path);
+void touch(FileSystem* fs, char* path);
 
 // my_open
 void open(UserOpenTable* tb, unsigned short inode_num);
@@ -128,7 +131,7 @@ void write(UserOpenTable* tb, unsigned short tbl_index, int length, char* conten
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
-void ln (Dentry* d, char* path, char* link, int soft);
+void ln (FileSystem* fs, char* path, char* link, int soft);
 
 // exit fs
 void exitfs();
