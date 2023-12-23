@@ -2,8 +2,8 @@
 
 void tbl_push_back(UserOpenTable* tb, UserOpenItem item){
     if(tb->size == tb->capacity){
-        int new_capacity = tb->capacity ? 1 : tb->capacity*2;
-        UserOpenItem* new_items = realloc(tb->items,new_capacity*sizeof(UserOpenItem));
+        int new_capacity = !tb -> capacity ? 1 : tb -> capacity * 2;
+        UserOpenItem* new_items = realloc(tb->items,new_capacity * sizeof(UserOpenItem));
         if (new_items == NULL){
             fprintf(stderr, "wrong, can't expand the table\n");
             return;

@@ -1,9 +1,14 @@
 #include "fs.h"
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
-void saveFs(FileSystem* fs, FILE *stream) {
-    fwrite(fs->disk.base, fs->disk.block_size * fs->disk.block_size, 1, stream);
+void exitfs(FileSystem* fs, FILE *stream) {
+    if (fs->disk.base != NULL) {
+        fwrite(fs->disk.base, 1, fs->disk.block_size * fs->super_block.block_num, stream);
+        printf("Saved!! \n");
+        fclose(stream);
+    } 
 }
 
 void loadFs(FileSystem* fs, FILE *stream) {
@@ -11,23 +16,44 @@ void loadFs(FileSystem* fs, FILE *stream) {
         fprintf(stderr, "wrong, can't open the file\n");
         return;
     } else {
-        char* buffer;
+        void* buffer;
 
         buffer = malloc(BLOCK_SIZE);
-        size_t read_cnt = fread(buffer, BLOCK_SIZE, 1, stream);
-        if (memcmp(buffer, "ext233233", sizeof("ext233233")) != 0) {
+        size_t read_cnt = fread(buffer, 1, BLOCK_SIZE, stream);
+        printf("read_cnt: %d\n", read_cnt);
+        for (int i = 0; i < 20; ++i) {
+            printf("%d ", ((char*)buffer)[i]);
+        }
+
+        // printf("read_cnt: %d\n", read_cnt);
+        // for (int i = 0; i < 20; ++i) {
+        //     printf("%c ", ((char*)buffer)[i]);
+        // }
+        
+        if (memcmp(buffer, "ext233233", 10) != 0) {
             fprintf(stderr, "Not a file system\n");
             free(buffer);
             return;
         }
         // 读取super block
-        memcpy(&fs->super_block, buffer + sizeof("ext233233"), sizeof(SuperBlock));
+        memcpy(&fs->super_block, buffer + 10, sizeof(SuperBlock));
         
-        diskInit(&fs->disk, fs->super_block.block_num, fs->super_block.block_size);
+        printf("super block: \n");
+        printf("inode_bitmap_block: %d\n", fs->super_block.inode_bitmap_block);
+        printf("block_bitmap_block: %d\n", fs->super_block.block_bitmap_block);
+        printf("inode_table_block: %d\n", fs->super_block.inode_table_block);
+        printf("data_block: %d\n", fs->super_block.data_block);
+        printf("inode_num: %d\n", fs->super_block.inode_num);
+        printf("block_num: %d\n", fs->super_block.block_num);
+        printf("inode_size: %d\n", fs->super_block.inode_size);
+        printf("block_size: %d\n", fs->super_block.block_size);
+
+
+        diskInit(&fs->disk, fs->super_block.block_size, fs->super_block.block_num);
         diskWriteBlock(&fs->disk, 0, buffer);
 
         for (int i = 1; i < fs->super_block.block_num; i++) {
-            fread(buffer, fs->disk.block_size, 1, stream);
+            fread(buffer, 1, fs->disk.block_size, stream);
             diskWriteBlock(&fs->disk, i, buffer);
         }
         free(buffer);
@@ -37,7 +63,7 @@ void loadFs(FileSystem* fs, FILE *stream) {
         fs->inode_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
         for (int i = 0; i < fs->super_block.inode_bitmap_block; i++) {
             // 一块一块读取 
-            diskReadBlock(&fs->disk, offset, fs->inode_bitmap + i);
+            diskReadBlock(&fs->disk, offset, fs->inode_bitmap + i * fs->disk.block_size);
             offset++;
         }
 
@@ -45,11 +71,17 @@ void loadFs(FileSystem* fs, FILE *stream) {
         fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
         for (int i = 0; i < fs->super_block.block_bitmap_block; i++) {
             // 一块一块读取
-            diskReadBlock(&fs->disk, offset, fs->block_bitmap + i);
+            diskReadBlock(&fs->disk, offset, fs->block_bitmap + i * fs->disk.block_size);
             offset++;
         }
 
         free(buffer);
+
+        fs->current_dir_inode = fs->root_inode = 0;
+        printf("root inode: %d\n", fs->root_inode);
+        fs->current_dir_path = (char*)malloc(2);
+        fs->current_dir_path[0] = '/';
+        fs->current_dir_path[1] = '\0';
     }
 }
 
@@ -129,6 +161,7 @@ ui16 getFirstInode(FileSystem* fs) {
     return (ui16)-1;
 }
 
+
 //从文件系统中读取指定 inode 号的 inode 数据，跨块则分别读取两个块的数据，然后合并到 inode 结构体中,如果不跨块，则直接读取相应块的数据
 INode readInode(FileSystem* fs, ui16 inode_num) {
     INode inode;
@@ -170,11 +203,13 @@ INode readInode(FileSystem* fs, ui16 inode_num) {
 //将指定 inode 号的 inode 数据写入到文件系统中，跨块同上
 void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
     int offset = 1 + fs->super_block.inode_bitmap_block + fs->super_block.block_bitmap_block;
+    printf("wt inode %d\n", inode_num);
     occupyInode(fs, inode_num);
     int begin = inode_num * fs->super_block.inode_size;
     int end = begin + fs->super_block.inode_size - 1;
     if (begin / fs->super_block.block_size != end / fs->super_block.block_size) {
         // 跨块
+        printf("kk %d\n");
         int begin_block = begin / fs->super_block.block_size;
         int end_block = end / fs->super_block.block_size;
         int begin_first = begin % fs->super_block.block_size;
@@ -193,10 +228,12 @@ void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
 
         free(buffer);
     } else {
+        printf("bkk \n");
         // 不跨块
         int block = begin / fs->super_block.block_size;
         int first = begin % fs->super_block.block_size;
         int len = end - begin + 1;
+        printf("bkk %d %d %d suppose sz %d\n", block, first, len, sizeof(INode));
         void* buffer = malloc(fs->super_block.block_size);
 
         diskReadBlock(&fs->disk, block + offset, buffer);
@@ -205,6 +242,7 @@ void writeInode(FileSystem* fs, ui16 inode_num, INode* inode) {
 
         free(buffer);
     }
+    
 }
 
 //从文件系统中读取数据块号为 data_block_num 的数据块到缓冲区 buf 中
@@ -227,11 +265,27 @@ ui16 createNewInode(FileSystem* fs, ui16 type) {
     res.created_time = res.modified_time = res.access_time = time(NULL);
     res.link_count = 1;
     memset(res.direct_block, 0xff, sizeof(res.direct_block));
+    res.direct_block[0] = getFirstBlock(fs);//先分配一个内存
+    occupyBlock(fs, res.direct_block[0]);
     res.first_inedxed_block = res.second_indexed_block = 0xffff;
     res.size = 0;
-    res.type = 0;
-    writeInode(fs, inode_num, &res);
+    res.type = type;
 
+    printf("INODE INFO: \n");
+    printf("id:%d\n",res.inode_number);
+    printf("ty:%o\n", res.type);    
+    printf("sz:%d\n", res.size);    
+    printf("lc:%d\n", res.link_count);
+    printf("fb:%d\n", res.direct_block[0]);
+
+    writeInode(fs, inode_num, &res);
+    INode test = readInode(fs, inode_num);
+    printf("INODE INFO - test: \n");
+    printf("id:%d\n", test.inode_number);
+    printf("ty:%o\n", test.type);    
+    printf("sz:%d\n", test.size);    
+    printf("lc:%d\n", test.link_count);
+    printf("fb:%d\n", test.direct_block[0]);
     return res.inode_number;
 }
 
@@ -283,11 +337,10 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
     int old_block = inode->size / fs->super_block.block_size;   // 申请前的块数
     int new_size = size + inode->size;
     int end_block = new_size / fs->super_block.block_size;      // 申请完之后的块数
-
+    inode->size = new_size;
     int cur_block = old_block + 1;
     int needed_block = end_block - old_block;
     if (needed_block == 0) {
-        inode->size = size;
         return;
     }
 
@@ -371,7 +424,8 @@ void fsAllocate(FileSystem*fs, INode* inode, int size) {
     }
 
     free(blocks);
-
+    printf("fsAllocate ing: %d %d\n", inode->inode_number, size);
+    printf("fsAllocated: %d %d blocks\n", inode->inode_number, cur_block - old_block);
 }
 
 //重新分配 inode 占用的数据块
@@ -381,13 +435,12 @@ void fsReAllocate(FileSystem* fs, INode* inode, int size) {
 }
 
 //从文件系统中读取指定 inode 的数据
-void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
+int fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
     if (offset + size > inode->size) {
         fprintf(stderr, "error: index over flow\n");
         return;    
     }
-
-    res = malloc(size);
+    printf("fsRead ing: %d %d %d\n",inode->inode_number, offset, size);
     int res_ptr = 0;
 
     const int block_size = fs->super_block.block_size;
@@ -408,12 +461,13 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
         // 在直接块内
         for (int i = cur_block; i < 10 && cur_block <= end_block; ++i) {
             dataReadBlock(fs, inode->direct_block[i], buffer);
-            int begin = cur % block_size;
-            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-            memcpy(res + res_ptr, buffer + begin, end - begin + 1);
-            res_ptr += end - begin + 1;
+            int l = cur % block_size;
+            int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+            printf("Reading direct block %d %dto%d\n", inode->direct_block[i],l, r);
+            memcpy(res + res_ptr, buffer + l, r - l + 1);
+            res_ptr += r - l + 1;
             cur_block++;
-            cur += end - begin + 1;
+            cur += r - l + 1;
         }
     }
     
@@ -427,12 +481,13 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
         dataReadBlock(fs, inode->first_inedxed_block, first_index);
         for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
             dataReadBlock(fs, first_index[i], buffer);
-            int begin = cur % block_size;
-            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-            memcpy(res + res_ptr, buffer + begin, end - begin + 1);
-            res_ptr += end - begin + 1;
+            int l = cur % block_size;
+            int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+            printf("Reading direct block %d %dto%d\n", inode->direct_block[i],l, r);
+            memcpy(res + res_ptr, buffer + l, r - l + 1);
+            res_ptr += r - l + 1;
             cur_block++;
-            cur += end - begin + 1;
+            cur += r - l + 1;
         }
         free(first_index);
     }
@@ -448,12 +503,14 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
             dataReadBlock(fs, second_index[i], first_index);
             for (int j = cur_block - block_base - i * index_pre_block; j < index_pre_block && cur_block <= end_block; ++j) {
                 dataReadBlock(fs, first_index[j], buffer);
-                int begin = cur % block_size;
-                int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-                memcpy(res + res_ptr, buffer + begin, end - begin + 1);
-                res_ptr += end - begin + 1;
+                int l = cur % block_size;
+                int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+                printf("Reading direct block %d %d to %d\n", inode->direct_block[i],l, r);
+                // printf
+                memcpy(res + res_ptr, buffer + l, r - l + 1);
+                res_ptr += r - l + 1;
                 cur_block++;
-                cur += end - begin + 1;
+                cur += r - l + 1;
             }
             dataWriteBlock(fs, second_index[i], first_index);
             free(first_index);
@@ -462,15 +519,19 @@ void fsRead(FileSystem*fs, INode* inode, int offset, void* res, int size) {
         dataWriteBlock(fs, inode->second_indexed_block, second_index);
         free(second_index);
     }
-
+    printf("OKKKK\n");
+    return cur - begin;
 }
 
 //向文件系统中写入指定 inode 的数据
 void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
     // 参考fsRead
+    printf("fsWrite ing: %d %d %d\n", inode->inode_number, offset, size);
     if (offset + size > inode->size) {
         fsAllocate(fs, inode, offset + size - inode->size);
     }
+    printf("fsWrite ing cur size: %d %d \n", inode->inode_number, inode->size);
+    printf("fsWrite ing: %d %d %d\n", inode->inode_number, offset, size);
     int context_ptr = 0;
 
     const int block_size = fs->super_block.block_size;
@@ -491,17 +552,17 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
         // 在直接块内
         for (int i = cur_block; i < 10 && cur_block <= end_block; ++i) {
             dataReadBlock(fs, inode->direct_block[i], buffer);
-            int begin = cur % block_size;
-            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-            memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+            int l = cur % block_size;
+            int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+            printf("Writing direct block %d %dto%d\n", inode->direct_block[i],l, r);
+            memcpy(buffer + l, context + context_ptr, r - l + 1);
             dataWriteBlock(fs, inode->direct_block[i], buffer);
-            context_ptr += end - begin + 1;
+            context_ptr += r - l + 1;
             cur_block++;
-            cur += end - begin + 1;
+            cur += r - l + 1;
         }
     }
     
-
     block_base += 10;
 
     const int index_pre_block = block_size / sizeof(ui16);
@@ -512,13 +573,14 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
         dataReadBlock(fs, inode->first_inedxed_block, first_index);
         for (int i = cur_block - block_base; i < index_pre_block && cur_block <= end_block; ++i) {
             dataReadBlock(fs, first_index[i], buffer);
-            int begin = cur % block_size;
-            int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-            memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+            int l = cur % block_size;
+            int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+            printf("Writing block %d %dto%d\n", inode->direct_block[i],l, r);
+            memcpy(buffer + l, context + context_ptr, r - l + 1);
             dataWriteBlock(fs, first_index[i], buffer);
-            context_ptr += end - begin + 1;
+            context_ptr += r - l + 1;
             cur_block++;
-            cur += end - begin + 1;
+            cur += r - l + 1;
         }
         free(first_index);
     }
@@ -534,13 +596,14 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
             dataReadBlock(fs, second_index[i], first_index);
             for (int j = cur_block - block_base - i * index_pre_block; j < index_pre_block && cur_block <= end_block; ++j) {
                 dataReadBlock(fs, first_index[j], buffer);
-                int begin = cur % block_size;
-                int end = (cur_block == end_block) ? end % block_size : block_size - 1;
-                memcpy(buffer + begin, context + context_ptr, end - begin + 1);
+                int l = cur % block_size;
+                int r = (cur_block == end_block) ? end % block_size : block_size - 1;
+                printf("Writing block %d %dto%d\n", inode->direct_block[i],l, r);
+                memcpy(buffer + l, context + context_ptr, r - l + 1);
                 dataWriteBlock(fs, first_index[i], buffer);
-                context_ptr += end - begin + 1;
+                context_ptr += r - l + 1;
                 cur_block++;
-                cur += end - begin + 1;
+                cur += r - l + 1;
             }
             dataWriteBlock(fs, second_index[i], first_index);
             free(first_index);
@@ -549,6 +612,7 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
         dataWriteBlock(fs, inode->second_indexed_block, second_index);
         free(second_index);
     }
+    printf("FUCKKKKKK\n");
 
     free(buffer);
 }
@@ -568,35 +632,49 @@ void sendAndShift(void* dst, void** src, int size) {
 //根据给定的 inode ID 从文件系统中读取目录条目
 Dentry readDentry(FileSystem* fs, ui16 inode_id) {
     Dentry res;
+    printf("readDentry ing: %d\n", inode_id);
     INode inode = readInode(fs, inode_id);
+    printf("%o\n",inode.type);
     if (((inode.type >> 9) & 7) != 4) {
         fprintf(stderr, "error: not a directory\n");
         return res;
     }
     int offset = 0;
     int size = inode.size;
+    printf("sz: %d\n", size);
     void* buffer = malloc(size);
+    printf("!!U(*Y&#*($*()))\n");
+    void* ptr = buffer;
     // 从文件系统中读取数据到 buffer
     fsRead(fs, &inode, offset, buffer, size);
-    // memcpy(&res.inode, buffer, sizeof(ui16));
-    // offset += sizeof(ui16);
-     // 解析数据并填充 Dentry 结构
-    sendAndShift(&res.inode, &buffer, sizeof(ui16));
-    sendAndShift(&res.father_inode, &buffer, sizeof(ui16));
-    sendAndShift(&res.name_length, &buffer, sizeof(ui16));
+    // 从 buffer 中读取数据到 res
+    printf("readDentry buffer: %d\n", size);
+    for(int i=0;i<size;i++){
+        printf("%x ", ((char*)buffer)[i]);
+    }
+    printf("\n");
+    sendAndShift(&res.inode, &ptr, sizeof(ui16));
+    printf("dentry inode: %d\n", res.inode);
+    sendAndShift(&res.father_inode, &ptr, sizeof(ui16));
+    printf("dentry fatherinode: %d\n", res.father_inode);
+    sendAndShift(&res.name_length, &ptr, sizeof(ui16));
+    printf("dentry namelength: %d\n", res.name_length);
     res.name = malloc(res.name_length);
-    sendAndShift(res.name, &buffer, res.name_length);
-    sendAndShift(&res.sub_dir_count, &buffer, sizeof(ui16));
+    sendAndShift(res.name, &ptr, res.name_length);
+    printf("dentry name: %s\n", res.name);
+    sendAndShift(&res.sub_dir_count, &ptr, sizeof(ui16));
+    printf("dentry sub_dir_count: %d\n", res.sub_dir_count);
 
     res.sub_dir_inode = malloc(res.sub_dir_count * sizeof(ui16));
     res.sub_dir_length = malloc(res.sub_dir_count * sizeof(ui16));
     res.sub_dir = malloc(res.sub_dir_count * sizeof(char*));
 
     for (int i = 0; i < res.sub_dir_count; ++i) {
-        sendAndShift(res.sub_dir_inode + i, &buffer, sizeof(ui16));
-        sendAndShift(res.sub_dir_length + i, &buffer, sizeof(ui16));
+        sendAndShift(res.sub_dir_inode + i, &ptr, sizeof(ui16));
+        sendAndShift(res.sub_dir_length + i, &ptr, sizeof(ui16));
+        printf("receiving : %d %d\n", res.sub_dir_inode[i], res.sub_dir_length[i]);
         res.sub_dir[i] = malloc(res.sub_dir_length[i]);
-        sendAndShift(res.sub_dir[i], &buffer, res.sub_dir_length[i]);
+        sendAndShift(res.sub_dir[i], &ptr, res.sub_dir_length[i]);
     }
     return res;
 }
@@ -604,64 +682,36 @@ Dentry readDentry(FileSystem* fs, ui16 inode_id) {
 // 把dentry翻译成流，然后调用fsWrite写入inode_id对应的inode，将给定的 Dentry 结构序列化，并将其保存到对应的 inode 中
 void saveDentry(FileSystem* fs, Dentry* dentry) {
     // 计算需要的缓冲区大小
-    size_t buffer_size = sizeof(ui16)*4+ dentry->name_length + 2 * dentry->sub_dir_count * sizeof(ui16);
-    for(int i=0; i<dentry->sub_dir_count; i++){
+    size_t buffer_size = sizeof(ui16) * 4 + dentry->name_length + 2 * dentry->sub_dir_count * sizeof(ui16);
+    for(int i= 0; i<dentry->sub_dir_count; i++){
         buffer_size += dentry->sub_dir_length[i];
     }
     // 分配缓冲区
     void* buffer = malloc(buffer_size);
     void* ptr = buffer;
     // 序列化数据到缓冲区
-    recieveAndShift(&ptr, &dentry->inode, sizeof(ui16));
+    receiveAndShift(&ptr, &dentry->inode, sizeof(ui16));
     receiveAndShift(&ptr, &dentry->father_inode, sizeof(ui16));
     receiveAndShift(&ptr, &dentry->name_length, sizeof(ui16));
     receiveAndShift(&ptr, dentry->name, dentry->name_length);
     receiveAndShift(&ptr, &dentry->sub_dir_count, sizeof(ui16));
     for(int i = 0; i < dentry->sub_dir_count; i++){
-        receiveAndShift(&ptr, dentry->sub_dir_inode+i*sizeof(ui16), sizeof(ui16));
-        receiveAndShift(&ptr, dentry->sub_dir_length+i*sizeof(ui16), sizeof(ui16));
+        printf("translating : %d %d %s\n", dentry->sub_dir_inode[i], dentry->sub_dir_length[i], dentry->sub_dir[i]);
+        receiveAndShift(&ptr, dentry->sub_dir_inode + i , sizeof(ui16));
+        receiveAndShift(&ptr, dentry->sub_dir_length + i , sizeof(ui16));
         receiveAndShift(&ptr, dentry->sub_dir[i], dentry->sub_dir_length[i]);
     }
+    printf("saveing dentry: %d %d\n", buffer_size, dentry->inode);
+    for (int i = 0; i < ptr - buffer; ++i) {
+        printf("%x ", ((char*)buffer)[i]);
+    }
+    printf("\n");
     // 读取对应的inode，将缓冲区写入文件系统
     INode inode = readInode(fs, dentry->inode);
     fsWrite(fs, &inode, 0, buffer, buffer_size);
     writeInode(fs, inode.inode_number, &inode);
     
     free(buffer);
-}
-
-//创建新的 Dentry，为当前目录（.）和父目录（..）初始化信息
-Dentry createDentry(FileSystem* fs, ui16 father_inode_id, char* name, ui16 name_length) {
-    Dentry res;
-    // 创建新的inode
-    res.inode = createNewInode(fs, 04777);
-    res.father_inode = father_inode_id;
-    res.name_length = name_length;
-    res.name = malloc(name_length + 1);
-    memcpy(res.name, name, name_length + 1);
-
-    // 初始化子目录信息
-    res.sub_dir_count = 2;
-    res.sub_dir_inode = malloc(2 * sizeof(ui16));
-    res.sub_dir_length = malloc(2 * sizeof(ui16));
-    res.sub_dir = malloc(2 * sizeof(char*));
-
-    // 初始化当前目录（.）的信息
-    res.sub_dir = malloc(2 * sizeof(char*));
-    res.sub_dir_inode[0] = res.inode;
-    res.sub_dir_length[0] = 1;
-    res.sub_dir[0] = malloc(1);
-    memcpy(res.sub_dir[0], ".", 1);
-
-    // 初始化父目录（..）的信息
-    res.sub_dir_inode[1] = father_inode_id;
-    res.sub_dir_length[1] = 2;
-    res.sub_dir[1] = malloc(2);
-    memcpy(res.sub_dir[1], "..", 2);
-
-    // 将Dentry保存到文件系统
-    saveDentry(fs, &res);
-    return res;
 }
 
 //释放 Dentry 结构中动态分配的内存
@@ -676,34 +726,67 @@ void freeDentry(Dentry* dir) {
 }
 
 //将一个子目录添加到父目录中
-void dentryAddSon(Dentry* father, Dentry* son) {
-    ui16* new_inode = malloc((father->sub_dir_count + 1) * sizeof(ui16));
-    ui16* new_sub_dir_length = malloc((father->sub_dir_count + 1) * sizeof(ui16));
-    char** new_sub_dir = malloc((father->sub_dir_count + 1) * sizeof(char*));
+void dentryAddSon(FileSystem* fs, ui16 father_id, ui16 inode_id, char* name, ui16 name_length) {
+    Dentry father = readDentry(fs, father_id);
+    father.sub_dir_inode = realloc(father.sub_dir_inode, (father.sub_dir_count + 1) * sizeof(ui16));
+    father.sub_dir_length = realloc(father.sub_dir_length, (father.sub_dir_count + 1) * sizeof(ui16));
+    father.sub_dir = realloc(father.sub_dir, (father.sub_dir_count + 1) * sizeof(char*));
+    father.sub_dir_inode[father.sub_dir_count] = inode_id;
+    father.sub_dir_length[father.sub_dir_count] = name_length + 1;
+    father.sub_dir[father.sub_dir_count] = malloc(name_length + 1);
+    memcpy(father.sub_dir[father.sub_dir_count], name, name_length + 1);
+    father.sub_dir_count++;
+    saveDentry(fs, &father);
+    freeDentry(&father);
+}
+
+//创建新的 Dentry，为当前目录（.）和父目录（..）初始化信息
+ui16 createDentry(FileSystem* fs, ui16 father_inode_id, char* name, ui16 name_length) {
+    Dentry res;
+    // 创建新的inode
+    res.inode = createNewInode(fs, 04777);
+    res.father_inode = father_inode_id;
+    res.name_length = name_length + 1;
+    res.name = malloc(name_length);
+    memcpy(res.name, name, name_length + 1);
+
+    // 初始化子目录信息
+    res.sub_dir_count = 2;
+    res.sub_dir_inode = malloc(2 * sizeof(ui16));
+    res.sub_dir_length = malloc(2 * sizeof(ui16));
+    res.sub_dir = malloc(2 * sizeof(char*));
+
+    // 初始化当前目录（.）的信息
+    res.sub_dir = malloc(2 * sizeof(char*));
+    res.sub_dir_inode[0] = res.inode;
+    res.sub_dir_length[0] = 2;
+    res.sub_dir[0] = malloc(res.sub_dir_length[0]);
+    memcpy(res.sub_dir[0], ".", 2);
+    res.sub_dir[0][1] = 0;
+
+    // 初始化父目录（..）的信息
+    res.sub_dir_inode[1] = father_inode_id;
+    res.sub_dir_length[1] = 3;
+    res.sub_dir[1] = malloc(res.sub_dir_length[1]);
+    memcpy(res.sub_dir[1], "..", 3);
+    res.sub_dir[1][2] = 0;
+
+    if (res.inode == 0) {
+        // 根目录
+        res.father_inode = res.inode;
+    } else {
+        dentryAddSon(fs, father_inode_id, res.inode, name, name_length + 1);
+    }
+
+    printf("createDentry ing: %d %d %d\n", res.inode, res.father_inode, res.name_length);
+    printf("createDentry ing: %d %d\n", res.sub_dir_count, res.sub_dir_inode[0]);
+    printf("createDentry ing: %d %d\n", res.sub_dir_length[0], res.sub_dir_length[1]);
+    printf("createDentry ing: %s %s\n", res.sub_dir[0], res.sub_dir[1]);
+
+    // 将Dentry保存到文件系统
+    saveDentry(fs, &res);
     
-    memcpy(new_inode, father->sub_dir_inode, father->sub_dir_count * sizeof(ui16));
-    new_inode[father->sub_dir_count] = son->inode;
-    memcpy(new_sub_dir_length, father->sub_dir_length, father->sub_dir_count * sizeof(ui16));
-    new_sub_dir_length[father->sub_dir_count] = son->name_length;
-    memcpy(new_sub_dir, father->sub_dir, father->sub_dir_count * sizeof(char*));
-    for (int i = 0; i < father->sub_dir_count; ++i) {
-        new_sub_dir[i] = malloc(father->sub_dir_length[i]);
-        memcpy(new_sub_dir[i], father->sub_dir[i], father->sub_dir_length[i]);
-    }
-    new_sub_dir[father->sub_dir_count] = malloc(son->name_length);
-    memcpy(new_sub_dir[father->sub_dir_count], son->name, son->name_length);
-
-    free(father->sub_dir_inode);
-    free(father->sub_dir_length);
-    for (int i = 0; i < father->sub_dir_count; ++i) {
-        free(father->sub_dir[i]);
-    }
-    free(father->sub_dir);
-
-    father->sub_dir_inode = new_inode;
-    father->sub_dir_length = new_sub_dir_length;
-    father->sub_dir = new_sub_dir;
-    father->sub_dir_count++;
+    return res.inode;
 }
 
 void dentryDeleteSon(FileSystem* fs, ui16 father_id, ui16 inode_id) {
@@ -742,6 +825,8 @@ void dentryDeleteSon(FileSystem* fs, ui16 father_id, ui16 inode_id) {
     father.sub_dir_length = new_sub_dir_length;
     father.sub_dir = new_sub_dir;
     father.sub_dir_count--;
+    
+    saveDentry(fs, &father);
 }
 
 void deleteDnetry(FileSystem* fs, ui16 inode_id) {
@@ -751,25 +836,20 @@ void deleteDnetry(FileSystem* fs, ui16 inode_id) {
         return;
     }
     dentryDeleteSon(fs, dentry.father_inode, inode_id);
+    freeDentry(&dentry);
     INode inode = readInode(fs, inode_id);
     fsFree(fs, &inode);
     freeInode(fs, inode_id);
 }
 
 void format(FileSystem* fs) {
-    // 如果fs有内容，清空fs
-    if (fs->disk.base!=NULL) {
-        free(fs->disk.base);
-    }
-
-    // 初始化disk
     diskInit(&fs->disk, BLOCK_NUM, BLOCK_SIZE);
-
     //初始化boot 1块
     int offset = 0;
     char identifier[] = "ext233233";
     memcpy(fs->disk.base, identifier, sizeof(identifier));
     offset += sizeof(identifier);
+    printf("size : %d\n", offset);
     initSuperBlock(&fs->super_block);
     memcpy(fs->disk.base + offset, &fs->super_block, sizeof(SuperBlock));
     offset = fs->disk.block_size;
@@ -780,7 +860,11 @@ void format(FileSystem* fs) {
     // 初始化block bitmap 放在内存
     fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
 
-    createDentry(fs, 0, "/", 1);
+    fs->root_inode = createDentry(fs, 0, "/", 1);
+    fs->current_dir_path = malloc(2);
+    strcpy(fs->current_dir_path, "/");
+    // printf("first:%d", fs->root_inode);
+    fs->current_dir_inode = fs->root_inode;
 }
 
 //无斜杠分割的路径
@@ -817,6 +901,33 @@ bool cd_(FileSystem* fs, ui16* cur_id , char* path) {
     }
 }
 
+void pwd_get(FileSystem* fs, ui16 cur_id, char* path, int path_length) {
+    if (cur_id == fs->root_inode) {
+        return;
+    }
+    INode cur_inode = readInode(fs, cur_id);
+    Dentry dentry = readDentry(fs, cur_id);
+    pwd_get(fs, dentry.father_inode, path, path_length + dentry.name_length);
+    path = realloc(path, path_length + dentry.name_length + 2);
+    strcat(path, "/");
+    strcat(path, dentry.name);
+    freeDentry(&dentry);
+}
+
+void pwd(FileSystem* fs) {
+    if (fs->current_dir_inode == fs->root_inode) {
+        fs->current_dir_path = realloc(fs->current_dir_path, 2);
+        strcpy(fs->current_dir_path, "/");
+    } else {
+        char* path = malloc(1);
+        path[0] = '\0';
+        pwd_get(fs, fs->current_dir_inode, path, 1);
+        fs->current_dir_path = realloc(fs->current_dir_path, strlen(path) + 1);
+        strcpy(fs->current_dir_path, path);
+        free(path);
+    }
+}
+
 void cd(FileSystem* fs, char* path) {
     // 解析路径，获取目录名和父目录名
     if (path[0] == '/') {
@@ -835,9 +946,7 @@ void cd(FileSystem* fs, char* path) {
         }
 
         fs->current_dir_inode = cur_dir_id;
-        free(fs->current_dir_path);
-        fs->current_dir_path = malloc(strlen(path) + 1);
-        strcpy(fs->current_dir_path, path);
+        pwd(fs);
         free(tmp_path);
     } else {
         char* tmp_path = malloc(strlen(path) + 1);
@@ -855,19 +964,17 @@ void cd(FileSystem* fs, char* path) {
         }
 
         fs->current_dir_inode = cur_dir_id;
-        free(fs->current_dir_path);
-        fs->current_dir_path = malloc(strlen(path) + 1);
-        strcpy(fs->current_dir_path, path);
+        pwd(fs);
         free(tmp_path);
     }
 }
 
 //无斜杠分割的路径
-int dirGetType(FileSystem* fs, ui16 cur_id, char* paht) {
+int dirGet(FileSystem* fs, ui16 cur_id, char* path) {
     ui16 cur_dir_id = cur_id;
     INode cur_inode = readInode(fs, cur_dir_id);
     if (((cur_inode.type >> 9) & 7) != 4) {
-        fprintf(stderr, "error: not a directory\n");
+        fprintf(stderr, "error: %s not a directory\n", path);
         return false;
     }
 
@@ -881,7 +988,34 @@ int dirGetType(FileSystem* fs, ui16 cur_id, char* paht) {
 
     freeDentry(&dentry);
 
-    if (*cur_id == cur_dir_id) {
+    if (cur_id == cur_dir_id) {
+        return 0;
+    } else {
+        INode inode = readInode(fs, cur_dir_id);
+        return inode.type >> 9;
+    }
+}
+
+//无斜杠分割的路径
+int getInodeFromName(FileSystem* fs, ui16 cur_id, char* path, ui16* res) {
+    ui16 cur_dir_id = cur_id;
+    INode cur_inode = readInode(fs, cur_dir_id);
+    if (((cur_inode.type >> 9) & 7) != 4) {
+        fprintf(stderr, "error: %s not a directory\n", path);
+        return false;
+    }
+
+    Dentry dentry = readDentry(fs, cur_dir_id);
+    for (int i = 0; i < dentry.sub_dir_count; ++i) {
+        if (strcmp(path, dentry.sub_dir[i]) == 0) {
+            *res = cur_dir_id = dentry.sub_dir_inode[i];
+            break;
+        }
+    }
+
+    freeDentry(&dentry);
+
+    if (cur_id == cur_dir_id) {
         return 0;
     } else {
         INode inode = readInode(fs, cur_dir_id);
@@ -890,10 +1024,12 @@ int dirGetType(FileSystem* fs, ui16 cur_id, char* paht) {
 }
 
 void mkdir_(FileSystem* fs, char* path, ui16 cur_dir_id) {
-    Dentry dentry = readDentry(fs, cur_dir_id);
-
+    printf("cur %d\n", cur_dir_id);
     char* last_token = NULL;
-    char* token = strtok(path, "/");
+    printf("Fuck\n");
+    char* tmp_p = malloc(strlen(path) + 1);
+    strcpy(tmp_p, path);
+    char* token = strtok(tmp_p, "/");
 
     while(token != NULL){
         last_token = token;
@@ -905,24 +1041,25 @@ void mkdir_(FileSystem* fs, char* path, ui16 cur_dir_id) {
                 fprintf(stderr, "error: %s already exists\n", last_token);
                 return;
             } else {
-                Dentry son = createDentry(fs, cur_dir_id, last_token, strlen(last_token));
-                dentryAddSon(&dentry, &son);
-                saveDentry(fs, &dentry);
-                freeDentry(&dentry);           
-                dentry = son;
-                cur_dir_id = dentry.inode;
+                printf("mkdir ing %s\n", last_token);
+                ui16 son = createDentry(fs, cur_dir_id, last_token, strlen(last_token));
+                cur_dir_id = son;
             }
         } else {
+            printf("mkdir ing %s\n", last_token);
             cd_(fs, &cur_dir_id, last_token);
         }
     }
+    free(tmp_p);
 }
 
 void mkdir(FileSystem* fs, char* path) {
     // 解析路径，获取目录名和父目录名
     if (path[0] == '/') {
+        printf("mkdir root\n");
         mkdir_(fs, path, fs->root_inode);
     } else {
+        printf("mkdir cur\n");
         mkdir_(fs, path, fs->current_dir_inode);
     }
 }
@@ -945,6 +1082,151 @@ void deleteFile(FileSystem* fs, ui16 dir_id, ui16 file_id) {
     }   
 }
 
+
+void ls_(FileSystem *fs, ui16 dir_id){
+    printf("reading dentry %d\n", dir_id);
+    INode tmp = readInode(fs, dir_id);
+    printf("type %o\n", tmp.type);
+    printf("f:%d\n", tmp.direct_block[0]);
+    printf("sz:%d\n", tmp.size);
+    Dentry dentry = readDentry(fs, dir_id);
+    printf("%d\n",dentry.sub_dir_count);
+    printf("dir\t");
+    printf("inode\t");
+    printf("size\t");
+    printf("link\t");
+    printf("type\t");
+    printf("created\n");
+    // printf("modified\n");
+    
+    for(int i = 0; i < dentry.sub_dir_count; i++){
+        // format as ls -l
+        printf("%s\t",dentry.sub_dir[i]);
+        INode inode = readInode(fs, dentry.sub_dir_inode[i]);
+        printf("%d\t",inode.inode_number);
+        printf("%d\t",inode.size);
+        printf("%d\t",inode.link_count);
+        printf("%o\t",inode.type);
+        printf("%s\t",ctime(&inode.created_time));
+        // printf("%s\t",ctime(&inode.modified_time));
+        // printf("%s\t",ctime(&inode.access_time));
+        printf("\n");
+        // printf("%s\n",dentry.sub_dir[i]);
+    }
+    freeDentry(&dentry);
+}
+
+void ls(FileSystem* fs, char* path) {
+    ui16 cur_dir_id = fs->root_inode;
+    printf("cur :dir %d\n", cur_dir_id);
+
+    if(path == NULL) {
+        ls_(fs,fs->current_dir_inode);
+        return;
+    }
+
+    // ls /root/abc 怎么处理
+    if(path[0] == '/'){
+        cur_dir_id = fs->root_inode;    
+    } else {
+        cur_dir_id = fs->current_dir_inode;
+    }
+    char *token = strtok(path, "/");
+    while(token != NULL){
+        if (!dirGet(fs, cur_dir_id, token)) {
+            fprintf(stderr, "error: %s is no exists\n", token);
+            return;
+        } 
+        printf("ls ing %s\n", token);
+        cd_(fs, &cur_dir_id, token);
+        token = strtok(NULL, "/");
+    }
+    
+    printf("ls ing %d\n", cur_dir_id);
+    ls_(fs, cur_dir_id);
+}
+
+
+void createFile(FileSystem* fs,ui16 cur_dir_id, char* name, ui16 name_length) {
+    if (dirGet(fs, cur_dir_id, name)) {
+        fprintf(stderr, "error: %s already exists\n", name);
+        return;
+    } else {
+        ui16 file_id = createNewInode(fs, 02777);
+        printf("name %s, len%d, suplen: %d \n", name, strlen(name), name_length);
+        dentryAddSon(fs, cur_dir_id, file_id, name, name_length);
+    }
+}
+
+void create(FileSystem* fs, char* path) {
+    ui16 cur_dir_id;
+    if (path[0] == '/') {
+        cur_dir_id = fs->root_inode;
+    } else {
+        cur_dir_id = fs->current_dir_inode;
+    }
+
+    char* token = strtok(path, "/");
+    char* last_token = NULL;
+    while(token != NULL){
+        last_token = token;
+        token = strtok(NULL, "/");
+        if (token == NULL) {
+            createFile(fs, cur_dir_id, last_token, strlen(last_token));
+            return false;
+        } else {
+            if (!cd_(fs, &cur_dir_id, last_token)) {
+                fprintf(stderr, "error: %s no dir exists\n", last_token);
+                return false;
+            }
+        }
+    }
+}
+
+bool Parser(FileSystem* fs, char* path, ui16* result) {
+    ui16 cur_dir_id;
+    if (path[0] == '/') {
+        cur_dir_id = fs->root_inode;
+    } else {
+        cur_dir_id = fs->current_dir_inode;
+    }
+
+    char* tmp_path = malloc(strlen(path) + 1);
+    strcpy(tmp_path, path);
+    char* token = strtok(tmp_path, "/");
+    char* last_token = NULL;
+    while(token != NULL){
+        last_token = token;
+        token = strtok(NULL, "/");
+        if (token == NULL) {
+            bool ok = getInodeFromName(fs, cur_dir_id, last_token, result);
+            // Dentry dentry = readDentry(fs, cur_dir_id);
+            // for (int i = 0; i < dentry.sub_dir_count; ++i) {
+            //     printf("Parser ing: %d %s compare: %s\n", dentry.sub_dir_inode[i], dentry.sub_dir[i], last_token);
+            //     printf("strlen %d %d\n", strlen(last_token), strlen(dentry.sub_dir[i]));
+            //     if (strcmp(last_token, dentry.sub_dir[i]) == 0) {
+            //         printf("Found!! %d\n ", dentry.sub_dir_inode[i]);
+            //         cur_dir_id = dentry.sub_dir_inode[i];
+            //         freeDentry(&dentry);
+            //         *result = cur_dir_id;
+            //         free(tmp_path);
+            //         return true;
+            //     }
+            // }
+            // freeDentry(&dentry);
+            free(tmp_path);
+            return ok;
+        } else {
+            if (!cd_(fs, &cur_dir_id, last_token)) {
+                fprintf(stderr, "error: no such fule or dir\n", last_token);
+                free(tmp_path);
+                return false;
+            }
+        }
+    }
+    free(tmp_path);
+}
+
 void rm_(FileSystem* fs, ui16 father_dir_id, ui16 cur_dir_id, int recursive) {
     INode cur_inode = readInode(fs, cur_dir_id);
     if (((cur_inode.type >> 9) & 7) == 4) {
@@ -952,8 +1234,11 @@ void rm_(FileSystem* fs, ui16 father_dir_id, ui16 cur_dir_id, int recursive) {
             Dentry dentry = readDentry(fs, cur_dir_id);
             while (dentry.sub_dir_count > 2) {
                 rm_(fs, cur_dir_id, dentry.sub_dir_inode[dentry.sub_dir_count - 1], recursive);
+                freeDentry(&dentry);
+                dentry = readDentry(fs, cur_dir_id);
             }
             deleteDnetry(fs, cur_dir_id);
+            freeDentry(&dentry);
             return;
         } else {
             fprintf(stderr, "cannot rm a directory, please use -r\n");
@@ -967,51 +1252,119 @@ void rm_(FileSystem* fs, ui16 father_dir_id, ui16 cur_dir_id, int recursive) {
 
 
 void rm(FileSystem* fs, char* path, int recursive){
-    // 解析路径，获取目录名和父目录名
-    if (path[0] == '/') {
-        rm_(fs, path, fs->root_inode, recursive);
-    } else {
-        rm_(fs, path, fs->current_dir_inode, recursive);
-    }
-}
+    // 解析路径，获取inode和父inode
 
-void ls_(FileSystem *fs, ui16 dir_id){
-    Dentry dentry = readDentry(fs, dir_id);
-    
-    for(int i = 0; i < dentry.sub_dir_count; i++){
-        printf("%s\n",dentry.sub_dir[i]);
-    }
-
-    freeDentry(dentry);
-}
-
-void ls(FileSystem* fs, char* path){
     ui16 cur_dir_id;
-    if(path[0] == NULL){
-        ls_(fs,fs->current_dir_inode);
-        return;
-    }
-    // ls /root/abc 怎么处理
-    if(path[0] == '/'){
-        cur_dir_id
-= fs->root_inode;    }
 
-    else {
-        cur_dir_id = fs->current_dir_inode;
-    }
-
-    char *token = strtok(path, "/");
-    while(token != NULL){
-        token = strtok(NULL, "/");
-        if (!dirGet(fs, cur_dir_id, token)) {
-                fprintf(stderr, "error: %s no dir exists\n", token);
-                return;
-        } 
-        cd_(fs, &cur_dir_id, token);
-    }
-    
-    ls_(fs, cur_dir_id);
 }
 
+// 返回open的哪项
+int open_(FileSystem* fs, UserOpenTable* tb, ui16 inode_num) {
+    int id = -1;
+    for(int i = 0; i < tb->size; i++){
+        if(tb->items[i].inode.inode_number == inode_num){
+            id = i;
+            break;
+        }
+    }
 
+    if (id != -1){
+        // 不用报错
+        // printf("The file is already opening\n");
+        return id;
+    } else {
+        INode inode = readInode(fs, inode_num);
+        UserOpenItem item;
+        item.inode = inode;
+        item.offset = 0;
+        item.modify = false;
+        tbl_push_back(tb, item);
+        return tb->size - 1;
+    }
+}
 
+void open(FileSystem* fs,UserOpenTable* tb, char* path){
+    ui16 in;
+    if(Parser(fs, path, &in)){
+        printf("open inode: %d\n", in);
+        open_(fs, tb, in);
+    } else {
+        printf("no such file");
+    }
+}
+
+void close_(FileSystem* fs, UserOpenTable* tb,ui16 inode_num){
+    int id = -1;
+    for(int i = 0; i < tb->size; i++){
+        if(tb->items[i].inode.inode_number == inode_num){
+            id = i;
+            break;
+        }
+    }
+
+    if (id == -1){
+        // printf("no such file is opening\n");
+        return;
+    } else {
+        if (tb->items[id].modify) {
+            // 更新修改时间
+            tb->items[id].inode.modified_time = time(NULL);
+            writeInode(fs, inode_num, &tb->items[id].inode);
+        }
+        tbl_remove(tb, id);
+    }
+}
+
+//怎么括号不对齐的
+
+void close(FileSystem* fs,UserOpenTable* tb, char* path){
+    ui16 in;
+    if (Parser(fs, path, &in)) {
+        close_(fs, tb, in);
+    } else {
+        printf("no such file");
+    }
+}
+
+int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content) {
+    ui16 in;
+    if (Parser(fs, path, &in)) {
+        int id = open_(fs, tb, in);
+
+        printf("Opened %d\n", id);
+        int ok = fsRead(fs, &tb->items[id].inode, tb->items[id].offset, content, length);
+        tb->items[id].offset += ok; 
+        return ok;
+    } else {
+        perror("no such file");
+    }
+}
+
+void write_(FileSystem* fs,UserOpenTable* tb, int idx, int length, char* content, int opt){
+    printf("WT %d %d %d\n", idx, length, opt);
+    if (opt == 0) {
+        // 覆盖写
+        tb->items[idx].offset = 0;
+    } else if (opt == 2) {
+        // 追加写
+        tb->items[idx].offset = tb->items[idx].inode.size;
+    }
+    if (length != 0) {
+        printf("WRITING!!!\n");
+        printf("%d %d %d\n", idx, length, opt);
+        printf("%s\n", content);
+        fsWrite(fs, &tb->items[idx].inode, tb->items[idx].offset, content, length);
+        tb->items[idx].modify = true;
+        printf("WRITTED!!!\n");
+    }
+}
+
+void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* content, int opt){
+    ui16 in;
+    if (Parser(fs, path, &in)) {
+        int id = open_(fs, tb, in);
+        write_(fs, tb, id, length, content, opt);
+    } else {
+        perror("no such file");
+    }
+}

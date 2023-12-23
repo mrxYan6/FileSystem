@@ -6,8 +6,8 @@
 #define INODE_NUM 1024
 #define BLOCK_BITMAP_BLOCK 1
 #define INODE_BITMAP_BLOCK 1
-#define INODE_TABLE_BLOCK 56
-#define DATA_BLOCK 965
-#define INODE_SIZE 56
+#define INODE_TABLE_BLOCK 88
+#define DATA_BLOCK 933
+#define INODE_SIZE 88
 #define EMPTY 0xFFFF
 #endif

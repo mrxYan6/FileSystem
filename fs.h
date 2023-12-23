@@ -70,7 +70,6 @@ typedef struct UserOpenItem {
 
     int offset;                           // 文件内读写偏移量
     bool modify;                          // inode是否被修改
-    bool open;                            // 文件是否被打开
 } UserOpenItem;
 
 typedef struct UserOpenTable {
@@ -93,6 +92,8 @@ void tbl_clear(UserOpenTable* tb);
 
 void tbl_remove(UserOpenTable* tb, int index);
 
+INode readInode(FileSystem* fs, ui16 inode_num) ;
+
 // file system save to file
 void saveFs(FileSystem* fs, FILE *stream);
 
@@ -112,6 +113,7 @@ void mkdir(FileSystem* fs, char* path);
 void rm(FileSystem* fs, char* path, int recursive); 
 
 void saveDentry(FileSystem* fs, Dentry* dentry);
+
 // my_ls
 void ls(FileSystem* fs, char* path);
 
@@ -119,25 +121,26 @@ void ls(FileSystem* fs, char* path);
 void cd(FileSystem* fs, char* path);
 
 // my_create
-void touch(FileSystem* fs, char* path);
+void create(FileSystem* fs, char* path);
 
 // my_open
-void open(UserOpenTable* tb, ui16 inode_num);
+void open(FileSystem* fs,UserOpenTable* tb, char* path);
 
 // my_close
-void close(UserOpenTable* tb, ui16 inode_num);
+void close(FileSystem* fs,UserOpenTable* tb, char* path);
 
 // my_read
-void read(UserOpenTable* tb, ui16 tbl_index, int length, char* content);
+int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content);
 
 // my_write
-void write(UserOpenTable* tb, ui16 tbl_index, int length, char* content);
+void write(FileSystem* fs,UserOpenTable* tb, char* path, int length, char* content, int opt);
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
-void ln(FileSystem* fs, char* path, char* link, int soft);
+// ln先开摆吧
+// void ln(FileSystem* fs, char* path, char* link, int soft);
 
 // exit fs
-void exitfs();
+void exitfs(FileSystem* fs, FILE* stream);
 
 #endif
