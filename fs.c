@@ -3,86 +3,12 @@
 #include <string.h>
 #include <assert.h>
 
-void exitfs(FileSystem* fs, FILE *stream) {
-    if (fs->disk.base != NULL) {
-        fwrite(fs->disk.base, 1, fs->disk.block_size * fs->super_block.block_num, stream);
-        printf("Saved!! \n");
-        fclose(stream);
-    } 
-}
-
-void loadFs(FileSystem* fs, FILE *stream) {
-    if (stream == NULL) {
-        fprintf(stderr, "wrong, can't open the file\n");
-        return;
-    } else {
-        void* buffer;
-
-        buffer = malloc(BLOCK_SIZE);
-        size_t read_cnt = fread(buffer, 1, BLOCK_SIZE, stream);
-        printf("read_cnt: %d\n", read_cnt);
-        for (int i = 0; i < 20; ++i) {
-            printf("%d ", ((char*)buffer)[i]);
-        }
-
-        // printf("read_cnt: %d\n", read_cnt);
-        // for (int i = 0; i < 20; ++i) {
-        //     printf("%c ", ((char*)buffer)[i]);
-        // }
-        
-        if (memcmp(buffer, "ext233233", 10) != 0) {
-            fprintf(stderr, "Not a file system\n");
-            free(buffer);
-            return;
-        }
-        // 读取super block
-        memcpy(&fs->super_block, buffer + 10, sizeof(SuperBlock));
-        
-        printf("super block: \n");
-        printf("inode_bitmap_block: %d\n", fs->super_block.inode_bitmap_block);
-        printf("block_bitmap_block: %d\n", fs->super_block.block_bitmap_block);
-        printf("inode_table_block: %d\n", fs->super_block.inode_table_block);
-        printf("data_block: %d\n", fs->super_block.data_block);
-        printf("inode_num: %d\n", fs->super_block.inode_num);
-        printf("block_num: %d\n", fs->super_block.block_num);
-        printf("inode_size: %d\n", fs->super_block.inode_size);
-        printf("block_size: %d\n", fs->super_block.block_size);
-
-
-        diskInit(&fs->disk, fs->super_block.block_size, fs->super_block.block_num);
-        diskWriteBlock(&fs->disk, 0, buffer);
-
-        for (int i = 1; i < fs->super_block.block_num; i++) {
-            fread(buffer, 1, fs->disk.block_size, stream);
-            diskWriteBlock(&fs->disk, i, buffer);
-        }
-        free(buffer);
-
-        int offset = 1;
-        // 读取inode bitmap
-        fs->inode_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
-        for (int i = 0; i < fs->super_block.inode_bitmap_block; i++) {
-            // 一块一块读取 
-            diskReadBlock(&fs->disk, offset, fs->inode_bitmap + i * fs->disk.block_size);
-            offset++;
-        }
-
-        // 读取block bitmap   
-        fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
-        for (int i = 0; i < fs->super_block.block_bitmap_block; i++) {
-            // 一块一块读取
-            diskReadBlock(&fs->disk, offset, fs->block_bitmap + i * fs->disk.block_size);
-            offset++;
-        }
-
-        free(buffer);
-
-        fs->current_dir_inode = fs->root_inode = 0;
-        printf("root inode: %d\n", fs->root_inode);
-        fs->current_dir_path = (char*)malloc(2);
-        fs->current_dir_path[0] = '/';
-        fs->current_dir_path[1] = '\0';
+void pirintInodeMap(FileSystem* fs) {
+    printf("INODE BIT MAP : \n");
+    for (int i = 0; i < 10; ++i) {
+        printf("%d ", fs->inode_bitmap[i]);
     }
+    printf("\n");
 }
 
 void initSuperBlock(SuperBlock* sb) {
@@ -96,7 +22,14 @@ void initSuperBlock(SuperBlock* sb) {
     sb->block_size = BLOCK_SIZE;
 }
 
-const int size_Byte = 32;
+// const int size_Byte = 32;
+
+void writeBlockBitMap(FileSystem* fs, ui16 num) {
+    int offset_block = num / 8 / fs->super_block.block_size;
+    int offset_int = offset_block * fs->super_block.block_size / 4;
+    printf("writeBlockBitMap %d %d %d\n", num, offset_block, offset_int);
+    diskWriteBlock(&fs->disk, 1 + fs->super_block.inode_bitmap_block + offset_block, fs->block_bitmap + offset_int);
+}
 
 //释放文件系统中指定块号的数据块
 int freeBlock(FileSystem* fs, ui16 block_num) {
@@ -104,6 +37,7 @@ int freeBlock(FileSystem* fs, ui16 block_num) {
     int int_number = block_num >> 5;
     int bit_number = block_num & 0x1f;
     fs->block_bitmap[int_number] &= ~(1 << bit_number);
+    writeBlockBitMap(fs, block_num);
     return 1;
 }
 
@@ -113,6 +47,7 @@ void occupyBlock(FileSystem* fs, ui16 block_num) {
     int int_number = block_num >> 5;
     int bit_number = block_num & 0x1f;
     fs->block_bitmap[int_number]|=(1<<bit_number);
+    writeBlockBitMap(fs, block_num);
 }
 
 //均用于获取文件系统中第一个空闲的数据块号
@@ -130,12 +65,20 @@ ui16 getFirstBlock(FileSystem* fs) {
     return (ui16)-1;
 }
 
+void writeInodeBitMap(FileSystem* fs, ui16 num) {
+    int offset_block = num / 8 / fs->super_block.block_size;
+    int offset_int = offset_block * fs->super_block.block_size / 4;
+    printf("writeInodeBitMap %d %d %d\n", num, offset_block, offset_int);
+    diskWriteBlock(&fs->disk, 1 + offset_block, fs->inode_bitmap + offset_int);
+}
+
 //释放文件系统中指定的 inode
 void freeInode(FileSystem* fs, ui16 inode_num) {
     assert(inode_num >= 0 && inode_num < fs->super_block.inode_num);   
     int int_number = inode_num >> 5;
     int bit_number = inode_num & 0x1f;
     fs->inode_bitmap[int_number] &= ~(1 << bit_number);
+    writeInodeBitMap(fs, inode_num);
 }
 
 //占用文件系统中指定的 inode,检查 inode 号的合法性，然后计算出在位图中的位置，将相应位置的位设置为 1
@@ -144,6 +87,14 @@ void occupyInode(FileSystem* fs, ui16 inode_num) {
     int int_number = inode_num >> 5;
     int bit_number = inode_num & 0x1f;
     fs->inode_bitmap[int_number] |= (1 << bit_number);
+    writeInodeBitMap(fs, inode_num);
+}
+
+bool testInode(FileSystem* fs, ui16 inode_num) {
+    assert(inode_num >= 0 && inode_num < fs->super_block.inode_num);   
+    int int_number = inode_num >> 5;
+    int bit_number = inode_num & 0x1f;
+    return fs->inode_bitmap[int_number] & (1 << bit_number);
 }
 
 //用于获取文件系统中第一个空闲的 inode 号
@@ -259,6 +210,7 @@ void dataWriteBlock(FileSystem* fs, int data_block_num, void* buf){
 
 //创建一个新的 inode 并返回其编号
 ui16 createNewInode(FileSystem* fs, ui16 type) {
+    pirintInodeMap(fs);
     INode res;
     ui16 inode_num = getFirstInode(fs);
     res.inode_number = inode_num;
@@ -803,22 +755,22 @@ void dentryDeleteSon(FileSystem* fs, ui16 father_id, ui16 inode_id) {
         return;
     }
 
-    ui16* new_inode = malloc((father.sub_dir_count - 1) * sizeof(ui16));
-    ui16* new_sub_dir_length = malloc((father.sub_dir_count - 1) * sizeof(ui16));
-    char** new_sub_dir = malloc((father.sub_dir_count - 1) * sizeof(char*));
+    int dir_count = father.sub_dir_count;
+
+    ui16* new_inode = malloc((dir_count - 1) * sizeof(ui16));
+    ui16* new_sub_dir_length = malloc((dir_count - 1) * sizeof(ui16));
+    char** new_sub_dir = malloc((dir_count - 1) * sizeof(char*));
     
     memcpy(new_inode, father.sub_dir_inode, index * sizeof(ui16));
-    memcpy(new_inode + index, father.sub_dir_inode + index + 1, (father.sub_dir_count - index - 1) * sizeof(ui16));
+    memcpy(new_inode + index, father.sub_dir_inode + index + 1, (dir_count - index - 1) * sizeof(ui16));
     memcpy(new_sub_dir_length, father.sub_dir_length, index * sizeof(ui16));
-    memcpy(new_sub_dir_length + index, father.sub_dir_length + index + 1, (father.sub_dir_count - index - 1) * sizeof(ui16));
+    memcpy(new_sub_dir_length + index, father.sub_dir_length + index + 1, (dir_count - index - 1) * sizeof(ui16));
     memcpy(new_sub_dir, father.sub_dir, index * sizeof(char*));
-    memcpy(new_sub_dir + index, father.sub_dir + index + 1, (father.sub_dir_count - index - 1) * sizeof(char*));
+    memcpy(new_sub_dir + index, father.sub_dir + index + 1, (dir_count - index - 1) * sizeof(char*));
 
     free(father.sub_dir_inode);
     free(father.sub_dir_length);
-    for (int i = 0; i < father.sub_dir_count; ++i) {
-        free(father.sub_dir[i]);
-    }
+    free(father.sub_dir[index]);
     free(father.sub_dir);
 
     father.sub_dir_inode = new_inode;
@@ -827,6 +779,7 @@ void dentryDeleteSon(FileSystem* fs, ui16 father_id, ui16 inode_id) {
     father.sub_dir_count--;
     
     saveDentry(fs, &father);
+    freeDentry(&father);
 }
 
 void deleteDnetry(FileSystem* fs, ui16 inode_id) {
@@ -855,10 +808,10 @@ void format(FileSystem* fs) {
     offset = fs->disk.block_size;
     
     // 初始化inode bitmap 放在内存
-    fs->inode_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
+    fs->inode_bitmap = (int*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
 
     // 初始化block bitmap 放在内存
-    fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
+    fs->block_bitmap = (int*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
 
     fs->root_inode = createDentry(fs, 0, "/", 1);
     fs->current_dir_path = malloc(2);
@@ -899,6 +852,14 @@ bool cd_(FileSystem* fs, ui16* cur_id , char* path) {
         *cur_id = cur_dir_id;
         return true;
     }
+}
+
+int getFatherId(FileSystem* fs, ui16 cur_id) {
+    INode cur_inode = readInode(fs, cur_id);
+    Dentry dentry = readDentry(fs, cur_id);
+    int res = dentry.father_inode;
+    freeDentry(&dentry);
+    return res;
 }
 
 void pwd_get(FileSystem* fs, ui16 cur_id, char* path, int path_length) {
@@ -1065,6 +1026,8 @@ void mkdir(FileSystem* fs, char* path) {
 }
 
 void deleteFile(FileSystem* fs, ui16 dir_id, ui16 file_id) {
+
+
     INode fileInode = readInode(fs, file_id);
     
     if (((fileInode.type >> 9) & 7) == 4) {
@@ -1097,7 +1060,7 @@ void ls_(FileSystem *fs, ui16 dir_id){
     printf("link\t");
     printf("type\t");
     printf("created\n");
-    // printf("modified\n");
+    printf("modified\n");
     
     for(int i = 0; i < dentry.sub_dir_count; i++){
         // format as ls -l
@@ -1108,7 +1071,7 @@ void ls_(FileSystem *fs, ui16 dir_id){
         printf("%d\t",inode.link_count);
         printf("%o\t",inode.type);
         printf("%s\t",ctime(&inode.created_time));
-        // printf("%s\t",ctime(&inode.modified_time));
+        printf("%s\t",ctime(&inode.modified_time));
         // printf("%s\t",ctime(&inode.access_time));
         printf("\n");
         // printf("%s\n",dentry.sub_dir[i]);
@@ -1148,6 +1111,10 @@ void ls(FileSystem* fs, char* path) {
 
 
 void createFile(FileSystem* fs,ui16 cur_dir_id, char* name, ui16 name_length) {
+    for (int i = 0; i < 10; ++i) {
+        printf("%d ", fs->inode_bitmap[i]);
+    }
+    printf("\n");
     if (dirGet(fs, cur_dir_id, name)) {
         fprintf(stderr, "error: %s already exists\n", name);
         return;
@@ -1159,6 +1126,7 @@ void createFile(FileSystem* fs,ui16 cur_dir_id, char* name, ui16 name_length) {
 }
 
 void create(FileSystem* fs, char* path) {
+    pirintInodeMap(fs);
     ui16 cur_dir_id;
     if (path[0] == '/') {
         cur_dir_id = fs->root_inode;
@@ -1200,20 +1168,6 @@ bool Parser(FileSystem* fs, char* path, ui16* result) {
         token = strtok(NULL, "/");
         if (token == NULL) {
             bool ok = getInodeFromName(fs, cur_dir_id, last_token, result);
-            // Dentry dentry = readDentry(fs, cur_dir_id);
-            // for (int i = 0; i < dentry.sub_dir_count; ++i) {
-            //     printf("Parser ing: %d %s compare: %s\n", dentry.sub_dir_inode[i], dentry.sub_dir[i], last_token);
-            //     printf("strlen %d %d\n", strlen(last_token), strlen(dentry.sub_dir[i]));
-            //     if (strcmp(last_token, dentry.sub_dir[i]) == 0) {
-            //         printf("Found!! %d\n ", dentry.sub_dir_inode[i]);
-            //         cur_dir_id = dentry.sub_dir_inode[i];
-            //         freeDentry(&dentry);
-            //         *result = cur_dir_id;
-            //         free(tmp_path);
-            //         return true;
-            //     }
-            // }
-            // freeDentry(&dentry);
             free(tmp_path);
             return ok;
         } else {
@@ -1246,16 +1200,54 @@ void rm_(FileSystem* fs, ui16 father_dir_id, ui16 cur_dir_id, int recursive) {
         }
     } else {
         // file or soft link
+        fprintf(stderr, "rm file ing %d\n", cur_dir_id);
         deleteFile(fs, father_dir_id, cur_dir_id);
     }
 }
 
 
+bool getParentAndDir(FileSystem* fs, char* path, ui16* parent, ui16* result) {
+    ui16 cur_dir_id;
+    if (path[0] == '/') {
+        cur_dir_id = fs->root_inode;
+    } else {
+        cur_dir_id = fs->current_dir_inode;
+    }
+
+    char* tmp_path = malloc(strlen(path) + 1);
+    strcpy(tmp_path, path);
+    char* token = strtok(tmp_path, "/");
+    char* last_token = NULL;
+    while(token != NULL){
+        last_token = token;
+        token = strtok(NULL, "/");
+        if (token == NULL) {
+            bool ok = getInodeFromName(fs, cur_dir_id, last_token, result);
+            free(tmp_path);
+            if (ok) {
+                *parent = cur_dir_id;
+            }
+            return ok;
+        } else {
+            if (!cd_(fs, &cur_dir_id, last_token)) {
+                fprintf(stderr, "error: no such fule or dir\n", last_token);
+                free(tmp_path);
+                return false;
+            }
+        }
+    }
+    free(tmp_path);
+}
+
 void rm(FileSystem* fs, char* path, int recursive){
     // 解析路径，获取inode和父inode
-
-    ui16 cur_dir_id;
-
+    ui16 father_dir_id, cur_dir_id;
+    if (getParentAndDir(fs, path, &father_dir_id, &cur_dir_id)) {
+        printf("removing %d %d\n", father_dir_id, cur_dir_id);
+        rm_(fs, father_dir_id, cur_dir_id, recursive);
+    } else {
+        fprintf(stderr, "error: no such file or directory\n");
+    }
 }
 
 // 返回open的哪项
@@ -1274,6 +1266,7 @@ int open_(FileSystem* fs, UserOpenTable* tb, ui16 inode_num) {
         return id;
     } else {
         INode inode = readInode(fs, inode_num);
+        printf("open inode: %d\n", inode.inode_number);
         UserOpenItem item;
         item.inode = inode;
         item.offset = 0;
@@ -1293,6 +1286,17 @@ void open(FileSystem* fs,UserOpenTable* tb, char* path){
     }
 }
 
+void closeItem(FileSystem* fs,UserOpenTable* tb, int id) {
+    if (id >= 0 && id < tb->size) {
+        if (tb->items[id].modify) {
+            // 更新修改时间
+            tb->items[id].inode.modified_time = time(NULL);
+            writeInode(fs, tb->items[id].inode.inode_number, &tb->items[id].inode);
+        }
+        tbl_remove(tb, id);
+    }
+}
+
 void close_(FileSystem* fs, UserOpenTable* tb,ui16 inode_num){
     int id = -1;
     for(int i = 0; i < tb->size; i++){
@@ -1301,19 +1305,11 @@ void close_(FileSystem* fs, UserOpenTable* tb,ui16 inode_num){
             break;
         }
     }
-
-    if (id == -1){
-        // printf("no such file is opening\n");
-        return;
-    } else {
-        if (tb->items[id].modify) {
-            // 更新修改时间
-            tb->items[id].inode.modified_time = time(NULL);
-            writeInode(fs, inode_num, &tb->items[id].inode);
-        }
-        tbl_remove(tb, id);
+    printf("close id: %d\n", id);
+    if (testInode(fs, inode_num)) {
+        closeItem(fs, tb, id);
     }
-}
+}   
 
 //怎么括号不对齐的
 
@@ -1332,7 +1328,21 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
         int id = open_(fs, tb, in);
 
         printf("Opened %d\n", id);
+        printf("Reading %d %d %d\n", id, tb->items[id].offset, length);
+
+        if (tb->items[id].offset >= tb->items[id].inode.size) {
+            printf("EOF\n");
+            memset(content, 0, length);
+            return 0;
+        }
+        if (length > tb->items[id].inode.size - tb->items[id].offset) {
+            length = tb->items[id].inode.size - tb->items[id].offset;
+        }
         int ok = fsRead(fs, &tb->items[id].inode, tb->items[id].offset, content, length);
+        for (int i = 0; i < length; ++i) {
+            printf("%x ", ((char*)content)[i]);
+        }
+        printf("\n");
         tb->items[id].offset += ok; 
         return ok;
     } else {
@@ -1364,7 +1374,98 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
     if (Parser(fs, path, &in)) {
         int id = open_(fs, tb, in);
         write_(fs, tb, id, length, content, opt);
+        close_(fs, tb, in);
+        open_(fs, tb, in);
     } else {
         perror("no such file");
+    }
+}
+
+
+
+void exitfs(FileSystem* fs, UserOpenTable* tb, FILE *stream) {
+    while (tb->size) {
+        closeItem(fs, tb, tb->size - 1);
+    }
+    if (fs->disk.base != NULL) {
+        fwrite(fs->disk.base, 1, fs->disk.block_size * fs->super_block.block_num, stream);
+        printf("Saved!! \n");
+        fclose(stream);
+    } 
+}
+
+
+
+void loadFs(FileSystem* fs, FILE *stream) {
+    if (stream == NULL) {
+        fprintf(stderr, "wrong, can't open the file\n");
+        return;
+    } else {
+        void* buffer;
+
+        buffer = malloc(BLOCK_SIZE);
+        size_t read_cnt = fread(buffer, 1, BLOCK_SIZE, stream);
+        printf("read_cnt: %d\n", read_cnt);
+        for (int i = 0; i < 20; ++i) {
+            printf("%d ", ((char*)buffer)[i]);
+        }
+
+        // printf("read_cnt: %d\n", read_cnt);
+        // for (int i = 0; i < 20; ++i) {
+        //     printf("%c ", ((char*)buffer)[i]);
+        // }
+        
+        if (memcmp(buffer, "ext233233", 10) != 0) {
+            fprintf(stderr, "Not a file system\n");
+            free(buffer);
+            return;
+        }
+        // 读取super block
+        memcpy(&fs->super_block, buffer + 10, sizeof(SuperBlock));
+        
+        printf("super block: \n");
+        printf("inode_bitmap_block: %d\n", fs->super_block.inode_bitmap_block);
+        printf("block_bitmap_block: %d\n", fs->super_block.block_bitmap_block);
+        printf("inode_table_block: %d\n", fs->super_block.inode_table_block);
+        printf("data_block: %d\n", fs->super_block.data_block);
+        printf("inode_num: %d\n", fs->super_block.inode_num);
+        printf("block_num: %d\n", fs->super_block.block_num);
+        printf("inode_size: %d\n", fs->super_block.inode_size);
+        printf("block_size: %d\n", fs->super_block.block_size);
+
+
+        diskInit(&fs->disk, fs->super_block.block_size, fs->super_block.block_num);
+        diskWriteBlock(&fs->disk, 0, buffer);
+
+        for (int i = 1; i < fs->super_block.block_num; i++) {
+            fread(buffer, 1, fs->disk.block_size, stream);
+            diskWriteBlock(&fs->disk, i, buffer);
+        }
+        free(buffer);
+
+        int offset = 1;
+        // 读取inode bitmap
+        fs->inode_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.inode_bitmap_block);
+        for (int i = 0; i < fs->super_block.inode_bitmap_block; i++) {
+            // 一块一块读取 
+            printf("reading inode bitmap %d\n", offset);
+            diskReadBlock(&fs->disk, offset, fs->inode_bitmap + i * fs->disk.block_size / 4);
+            offset++;
+        }
+
+        // 读取block bitmap   
+        fs->block_bitmap = (ui32*)malloc(fs->disk.block_size * fs->super_block.block_bitmap_block);
+        for (int i = 0; i < fs->super_block.block_bitmap_block; i++) {
+            // 一块一块读取
+            printf("reading block bitmap %d\n", offset);
+            diskReadBlock(&fs->disk, offset, fs->block_bitmap + i * fs->disk.block_size / 4);
+            offset++;
+        }
+
+        fs->current_dir_inode = fs->root_inode = 0;
+        printf("root inode: %d\n", fs->root_inode);
+        fs->current_dir_path = (char*)malloc(2);
+        fs->current_dir_path[0] = '/';
+        fs->current_dir_path[1] = '\0';
     }
 }

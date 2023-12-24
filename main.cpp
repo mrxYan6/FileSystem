@@ -14,13 +14,13 @@ void show_help(){
     std::cout << "命令名\t\t命令参数\t\t命令功能\n\n";
     std::cout << "cd\t\t目录名(路径名)\t\t切换当前目录到指定目录\n";
     std::cout << "mkdir\t\t目录名\t\t\t在当前目录创建新目录\n";
-    std::cout << "rmdir\t\t目录名\t\t\t在当前目录删除指定目录\n";
     std::cout << "ls\t\t无\t\t\t显示当前目录下的目录和文件\n";
     std::cout << "create\t\t文件名\t\t\t在当前目录下创建指定文件\n";
     std::cout << "rm\t\t文件名\t\t\t在当前目录下删除指定文件\n";
+    std::cout << "rm\t-r\t文件名\t\t\t在当前目录下删除指定目录\n";
     std::cout << "open\t\t文件名\t\t\t在当前目录下打开指定文件\n";
-    std::cout << "write\t\t无\t\t\t在打开文件状态下，写该文件\n";
-    std::cout << "read\t\t无\t\t\t在打开文件状态下，读取该文件\n";
+    std::cout << "write\t\t无\t\t\t写该文件，如未打开，则打开，写完后关闭\n";
+    std::cout << "read\t\t无\t\t\t读取该文件，如未打开，则打开\n";
     std::cout << "close\t\t无\t\t\t在打开文件状态下，关闭该文件\n";
     std::cout << "exit\t\t无\t\t\t退出系统\n\n";
 }
@@ -198,7 +198,7 @@ int main(){
 
                     sp2 = (char*)malloc(tmp.length() + 1);
                     strcpy(sp2, tmp.c_str());
-                    write(&fs, &openTable, sp1, tmp.length() + 1, sp2, 1);
+                    write(&fs, &openTable, sp1, tmp.length() , sp2, 1);
 
                     free(sp2);
                     free(sp1);
@@ -219,7 +219,7 @@ int main(){
                         std::cerr << "WRIT: " << tmp << "\n";
                         sp2 = (char*)malloc(tmp.length() + 1);
                         strcpy(sp2, tmp.c_str());
-                        write(&fs, &openTable, sp1, tmp.length() + 1, sp2, 2);
+                        write(&fs, &openTable, sp1, tmp.length(), sp2, 2);
                         free( sp2);
                         free( sp1);
                     } else if (tokens[3] == "-r") {
@@ -236,7 +236,7 @@ int main(){
                         }
                         sp2 = (char*)malloc(tmp.length() + 1);
                         strcpy(sp2, tmp.c_str());
-                        write(&fs, &openTable, sp1, tmp.length() + 1, sp2, 0);
+                        write(&fs, &openTable, sp1, tmp.length(), sp2, 0);
                         free( sp2);
                         free( sp1);
                     } else {
@@ -257,20 +257,22 @@ int main(){
                     len = atoi(tokens[2].c_str());
                     sp2 = new char [len + 1];
 
-                    read(&fs, &openTable, sp1, len, sp2);
+                    int ok = read(&fs, &openTable, sp1, len, sp2);
                     // for (int i = 0; i < len; ++i) {
                     //     std::cerr << sp2[i];
                     // }
                     // std::cerr << "\n";
 
                     std::string tmp = sp2;
+                    std::cout << "Successfuly reading : " << ok << "bytes\n";
                     std::cout << tmp << "\n";
                     free( sp1);
                 }
                 break;
             case 10:        // exit
+                
                 fp = fopen(path.c_str(), "wb");
-                exitfs(&fs, fp);
+                exitfs(&fs, &openTable, fp);
                 tbl_destroy(&openTable);
                 return 0;
                 break;

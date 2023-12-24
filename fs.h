@@ -124,16 +124,16 @@ void cd(FileSystem* fs, char* path);
 void create(FileSystem* fs, char* path);
 
 // my_open
-void open(FileSystem* fs,UserOpenTable* tb, char* path);
+void open(FileSystem* fs, UserOpenTable* tb, char* path);
 
 // my_close
-void close(FileSystem* fs,UserOpenTable* tb, char* path);
+void close(FileSystem* fs, UserOpenTable* tb, char* path);
 
 // my_read
 int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content);
 
 // my_write
-void write(FileSystem* fs,UserOpenTable* tb, char* path, int length, char* content, int opt);
+void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* content, int opt);
 
 // my_ln
 // soft = 0: hard link; soft = 1: soft link
@@ -141,6 +141,6 @@ void write(FileSystem* fs,UserOpenTable* tb, char* path, int length, char* conte
 // void ln(FileSystem* fs, char* path, char* link, int soft);
 
 // exit fs
-void exitfs(FileSystem* fs, FILE* stream);
+void exitfs(FileSystem* fs, UserOpenTable* tb, FILE* stream);
 
 #endif
