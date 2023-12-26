@@ -30,9 +30,9 @@ void error(std::string command){
     std::cout << "输入 'help' 来查看命令提示.\n";
 }
 
-int main(){
-    std::string cmdToken[] = {"mkdir", "rmdir", "ls", "cd", "create", "rm", "open", "close", "write", "read", "exit", "help"};
 
+int main(){
+    std::vector<std::string> cmdToken= {"mkdir", "rmdir", "ls", "cd", "create", "rm", "open", "close", "write", "read", "exit", "help"};
     std::cout << "\n\n************************ 文件系统 **************************************************\n";
     std::cout << "************************************************************************************\n\n";
      // 创建并初始化文件系统
@@ -62,12 +62,14 @@ int main(){
         std::getline(std::cin, buffer);
         // return 0;
         std::stringstream ss;
+        ss.clear();
         ss << buffer;
 
         std::vector<std::string> tokens;
         std::string temp;
         while (ss >> temp) {
             tokens.push_back(temp);
+            std::cerr << temp << "\n";
         }
         if (tokens.size() == 0) continue;        
         int id = -1;
@@ -77,7 +79,8 @@ int main(){
                 break;
             }
         }
-
+        std::cerr << id << "\n";
+        // std::cerr << tokens[0] << " " << cmdToken[0] << id << (tokens[0] == cmdToken[0]) << std::endl;
         char *sp1, *sp2, *sp3;
 
         switch (id) {
@@ -186,16 +189,11 @@ int main(){
                     int linecnt = atoi(tokens[2].c_str());
                     std::string tmp;
                     std::getline(std::cin, tmp);
-                    // std::cin >> tmp;
-                    // std::cout << "KLHEFIOUBWYUOEFGI!!!!\n";
                     for (int i = 1; i < linecnt; ++i) {
                         std::string tmp2;
-                        // std::cin >> tmp2;
                         std::getline(std::cin, tmp2);
                         tmp = tmp + "\n" + tmp2;
                     }
-                    // std::cout << "I*Y*&TQ@&^#R^&E#@&^GU!!!!\n";
-
                     sp2 = (char*)malloc(tmp.length() + 1);
                     strcpy(sp2, tmp.c_str());
                     write(&fs, &openTable, sp1, tmp.length() , sp2, 1);
@@ -210,7 +208,6 @@ int main(){
                         int linecnt = atoi(tokens[2].c_str());
                         std::string tmp;
                         std::getline(std::cin, tmp);
-                        // std::cin >> tmp;
                         for (int i = 1; i < linecnt; ++i) {
                             std::string tmp2;
                             std::getline(std::cin, tmp2);
@@ -258,11 +255,6 @@ int main(){
                     sp2 = new char [len + 1];
 
                     int ok = read(&fs, &openTable, sp1, len, sp2);
-                    // for (int i = 0; i < len; ++i) {
-                    //     std::cerr << sp2[i];
-                    // }
-                    // std::cerr << "\n";
-
                     std::string tmp = sp2;
                     std::cout << "Successfuly reading : " << ok << "bytes\n";
                     std::cout << tmp << "\n";

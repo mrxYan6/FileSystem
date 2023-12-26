@@ -1281,7 +1281,7 @@ void open(FileSystem* fs,UserOpenTable* tb, char* path){
         printf("open inode: %d\n", in);
         open_(fs, tb, in);
     } else {
-        printf("no such file");
+        printf("no such file\n");
     }
 }
 
@@ -1317,7 +1317,7 @@ void close(FileSystem* fs,UserOpenTable* tb, char* path){
     if (Parser(fs, path, &in)) {
         close_(fs, tb, in);
     } else {
-        printf("no such file");
+        printf("no such file\n");
     }
 }
 
@@ -1345,7 +1345,7 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
         tb->items[id].offset += ok; 
         return ok;
     } else {
-        perror("no such file");
+        perror("no such file\n");
     }
 }
 
@@ -1376,7 +1376,7 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
         close_(fs, tb, in);
         open_(fs, tb, in);
     } else {
-        perror("no such file");
+        perror("no such file\n");
     }
 }
 
@@ -1404,22 +1404,12 @@ void loadFs(FileSystem* fs, FILE *stream) {
 
         buffer = malloc(BLOCK_SIZE);
         size_t read_cnt = fread(buffer, 1, BLOCK_SIZE, stream);
-        // printf("read_cnt: %d\n", read_cnt);
-        for (int i = 0; i < 20; ++i) {
-            printf("%d ", ((char*)buffer)[i]);
-        }
-
-        // printf("read_cnt: %d\n", read_cnt);
-        // for (int i = 0; i < 20; ++i) {
-        //     printf("%c ", ((char*)buffer)[i]);
-        // }
         
         if (memcmp(buffer, "ext233233", 10) != 0) {
-            // fprintf(stderr, "Not a file system\n");
             free(buffer);
             return;
         }
-        // 读取super block
+
         memcpy(&fs->super_block, buffer + 10, sizeof(SuperBlock));
         
         printf("super block: \n");
