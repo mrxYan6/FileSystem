@@ -7,12 +7,12 @@
 #include <stdbool.h>
 #include "disk.h"
 #include "config.h"
-//我要实现类似ext2的文件系统，帮我搞一段示意图
+
 // 1 block -> 1024B
 // | super block | inode bitmap | block bitmap | inode table  | data block |
 // | 1 block     | 1 block      | 1 block      | 56 block     | 965 block  |
 typedef unsigned int ui32;
-typedef unsigned int ui16;
+typedef unsigned short ui16;
 
 typedef struct SuperBlock {
     ui16 inode_bitmap_block;        // 2B   inode bitmap block number
