@@ -135,11 +135,6 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
 // my_write
 void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* content, int opt);
 
-// my_ln
-// soft = 0: hard link; soft = 1: soft link
-// ln先开摆吧
-// void ln(FileSystem* fs, char* path, char* link, int soft);
-
 // exit fs
 void exitfs(FileSystem* fs, UserOpenTable* tb, FILE* stream);
 
