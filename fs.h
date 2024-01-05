@@ -16,11 +16,11 @@ typedef unsigned short ui16;
 
 
 typedef struct User {
-    ui16 user_id;                   // 2B   用户id
-    ui16 group_id;                  // 2B   用户所属组id
-    char user_name[10];             // 8B   用户名
-    char password[16];              // 8B   密码
-} User;                             // 20B
+    ui16 user_id;                   // 用户id
+    ui16 group_id;                  // 用户所属组id
+    char user_name[10];             // 用户名
+    char password[16];              // 密码
+} User;                          
 
 typedef struct UserList {
     User* users;                    // 用户列表
@@ -43,11 +43,11 @@ void ul_clear(UserList* ul);
 void ul_remove(UserList* ul, int index);
 
 typedef struct Group {
-    ui16 group_id;                  // 2B   组id
-    char group_name[10];            // 8B   组名
-    ui16 user_count;                // 2B   组内用户数
-    ui16 user_id[20];               // 8B   组内用户id
-} Group;                            // 12B
+    ui16 group_id;                  // 组id
+    char group_name[10];            // 组名
+    ui16 user_count;                // 组内用户数
+    ui16 user_id[20];               // 组内用户id
+} Group;
 
 typedef struct GroupList {
     Group* groups;                  // 组列表
