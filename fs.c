@@ -1265,6 +1265,8 @@ int open_(FileSystem* fs, UserOpenTable* tb, ui16 inode_num) {
         return id;
     } else {
         INode inode = readInode(fs, inode_num);
+	if(!checkPermission(fs,inode,0))
+	    return 0；	
         // printf("open inode: %d\n", inode.inode_number);
         UserOpenItem item;
         item.inode = inode;
@@ -1278,7 +1280,7 @@ int open_(FileSystem* fs, UserOpenTable* tb, ui16 inode_num) {
 void open(FileSystem* fs,UserOpenTable* tb, char* path){
     ui16 in;
     if(Parser(fs, path, &in)){
-        printf("open inode: %d\n", in);
+	wait(fs.read_lock);
         open_(fs, tb, in);
     } else {
         printf("no such file\n");
@@ -1323,6 +1325,14 @@ void close(FileSystem* fs,UserOpenTable* tb, char* path){
 
 int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content) {
     ui16 in;
+    INode inode = readInode(fs,in);
+    if(!checkPermission(fs,inode,0))
+	return ;
+    wait(fs.Rmutex);
+    if(fs.read_count == 0)
+	wait(fs.write_lock);
+    fs.read_count++;
+    sigal(fs.Rmutex);
     if (Parser(fs, path, &in)) {
         int id = open_(fs, tb, in);
 
@@ -1347,9 +1357,16 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
     } else {
         perror("no such file\n");
     }
+    wait(fs.Rmutex);
+    fs.reand_count--;
+    if(fs.read_count == 0)
+	signal(fs.write_lock);
 }
 
 void write_(FileSystem* fs,UserOpenTable* tb, int idx, int length, char* content, int opt){
+    INode inode = readInode(fs,idex);
+    if(!checkPermission(fs,inode,0))
+	return ;
     printf("WT %d %d %d\n", idx, length, opt);
     if (opt == 0) {
         // 覆盖写
@@ -1370,6 +1387,7 @@ void write_(FileSystem* fs,UserOpenTable* tb, int idx, int length, char* content
 
 void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* content, int opt){
     ui16 in;
+    wait(fs.write_lock);
     if (Parser(fs, path, &in)) {
         int id = open_(fs, tb, in);
         write_(fs, tb, id, length, content, opt);
@@ -1378,6 +1396,7 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
     } else {
         perror("no such file\n");
     }
+    signal(fs.write_lock);
 }
 
 
@@ -1621,4 +1640,32 @@ int attachGroup(FileSystem* fs, ui16 user_id, ui16 group_id) {
         }
     }
     return -3; // Group not found
+}
+void createHardLink(FileSystem* fs, ui16 source_inode_id, ui16 target_dir_id, char* link_name, ui16 name_length) {
+    // 检查目标目录中是否已经存在同名链接
+    if (dirGet(fs, target_dir_id, link_name)) {
+        // 如果已经存在同名链接，打印错误信息并返回
+        fprintf(stderr, "error: %s already exists\n", link_name);
+        return;
+    } else {
+        // 在目标目录中创建一个新的硬链接，共享相同的inode
+        dentryAddSon(fs, target_dir_id, source_inode_id, link_name, name_length);
+    }
+}
+
+// 创建软链接的函数
+void createSoftLink(FileSystem* fs, char* target_path, ui16 target_dir_id, char* link_name, ui16 name_length) {
+    // 检查目标目录中是否已经存在同名链接
+    if (dirGet(fs, target_dir_id, link_name)) {
+        // 如果已经存在同名链接，打印错误信息并返回
+        fprintf(stderr, "error: %s already exists\n", link_name);
+        return;
+    } else {
+        // 在目标目录中创建一个新的软链接，记录目标路径
+        ui16 link_inode_id = createNewInode(fs, 0777);  // 假设创建新inode的函数为createNewInode
+        dentryAddSon(fs, target_dir_id, link_inode_id, link_name, name_length);
+        
+        // 在新inode中存储软链接的目标路径
+        setLinkTarget(fs, link_inode_id, target_path);  // 假设设置软链接目标路径的函数为setLinkTarget
+    }
 }
