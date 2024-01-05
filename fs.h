@@ -14,6 +14,61 @@
 typedef unsigned int ui32;
 typedef unsigned short ui16;
 
+
+typedef struct User {
+    ui16 user_id;                   // 用户id
+    ui16 group_id;                  // 用户所属组id
+    char user_name[10];             // 用户名
+    char password[16];              // 密码
+} User;                          
+
+typedef struct UserList {
+    User* users;                    // 用户列表
+    int size;                       // 用户数
+    int capacity;                   // 用户列表容量
+} UserList;
+
+void ul_push_back(UserList* ul, User user);
+
+void ul_pop_back(UserList* ul);
+
+void ul_init(UserList* ul);
+
+void ul_destroy(UserList* ul);
+
+void ul_resize(UserList* ul, int new_size);
+
+void ul_clear(UserList* ul);
+
+void ul_remove(UserList* ul, int index);
+
+typedef struct Group {
+    ui16 group_id;                  // 组id
+    char group_name[10];            // 组名
+    ui16 user_count;                // 组内用户数
+    ui16 user_id[20];               // 组内用户id
+} Group;
+
+typedef struct GroupList {
+    Group* groups;                  // 组列表
+    int size;                       // 组数
+    int capacity;                   // 组列表容量
+} GroupList;
+
+void gl_push_back(GroupList* gl, Group group);
+
+void gl_pop_back(GroupList* gl);
+
+void gl_init(GroupList* gl);
+
+void gl_destroy(GroupList* gl);
+
+void gl_resize(GroupList* gl, int new_size);
+
+void gl_clear(GroupList* gl);
+
+void gl_remove(GroupList* gl, int index);
+
 typedef struct SuperBlock {
     ui16 inode_bitmap_block;        // 2B   inode bitmap block number
     ui16 block_bitmap_block;        // 2B   block bitmap block number
@@ -23,6 +78,9 @@ typedef struct SuperBlock {
     ui16 block_num;                 // 2B   block number
     ui16 inode_size;                // 2B   inode size
     ui16 block_size;                // 2B   block size
+    UserList user_list;             // 所有用户列表
+    GroupList group_list;           // 所有组列表
+
 } SuperBlock;
 
 void initSuperBlock(SuperBlock* sb);
@@ -35,6 +93,9 @@ typedef struct INode {
     ui16 second_indexed_block;      // 2B   二级索引块 
     ui16 type;                      // 2B   文件属性 dir/file/link rwxrwxrwx
     ui16 link_count;                // 2B   链接数
+    ui16 user_id;                   // 2B   属于的用户id
+    ui16 read_lock;                 // 2B   读锁数
+    ui16 write_lock;                // 2B   写锁数
     time_t created_time;            // 8B   创建时间
     time_t modified_time;           // 8B   修改时间
     time_t access_time;             // 8B   访问时间
@@ -56,13 +117,18 @@ typedef struct Dentry {
 } Dentry;                           // 48B
 
 typedef struct FileSystem {
-    Disk disk;
-    SuperBlock super_block;
-    InodeBitmap inode_bitmap;
-    BlockBitmap block_bitmap;
-    ui16 root_inode;
-    ui16 current_dir_inode;
-    char* current_dir_path;
+    Disk disk;                      // 磁盘
+    SuperBlock super_block;         // 超级块
+    InodeBitmap inode_bitmap;       // inode的位图
+    BlockBitmap block_bitmap;       // block的位图
+    ui16 root_inode;                // 根目录inode编号
+    ui16 current_dir_inode;         // 当前目录inode编号
+    char* current_dir_path;         // 当前目录路径
+    
+    ui16 current_user_id;           // 当前用户id
+    UserList user_list;             // 所有用户列表
+    GroupList group_list;           // 所有组列表
+
 } FileSystem;
 
 typedef struct UserOpenItem {
@@ -137,5 +203,7 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
 
 // exit fs
 void exitfs(FileSystem* fs, UserOpenTable* tb, FILE* stream);
+
+bool checkPermission(FileSystem* fs, INode* inode, int opt);
 
 #endif
