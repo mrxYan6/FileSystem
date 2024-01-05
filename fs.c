@@ -1460,12 +1460,12 @@ void loadFs(FileSystem* fs, FILE *stream) {
 }
 
 //判断当前用户是否具有对该文件的rwx权限
-bool checkPermission(FileSystem* fs，INode* inode, int opt)
+bool checkPermission(FileSystem* fs, INode* inode, int opt)
 {
 	int groupnum_current_user;
 	int groupnum_user_id;
 	int count;
-	for (int i = 0; i <= fs->grouplist.size; i++)
+	for (int i = 0; i <= fs->group_list.size; i++)
 	{
 		for (int j = 0; j < fs->group_list->groups[i].user_count; j++)
 		{
@@ -1481,8 +1481,117 @@ bool checkPermission(FileSystem* fs，INode* inode, int opt)
 		count = 1;
 	else
 		count = 2;
-	if((inode.type >> (3 + 3 * count + opt) & 1)
+	if((inode.type >> (3 + 3 * count + opt) & 1))
 		retrun false;
 	else
 		retrun true;
 }
+
+
+void ul_push_back(UserList* ul, User user) {
+    if (ul->size == ul->capacity) {
+        ul_resize(ul, ul->capacity * 2);
+    }
+    ul->users[ul->size] = user;
+    ul->size++;
+}
+
+void ul_pop_back(UserList* ul) {
+    if (ul->size > 0) {
+        ul->size--;
+    }
+}
+
+void ul_init(UserList* ul) {
+    ul->users = NULL;
+    ul->size = 0;
+    ul->capacity = 0;
+}
+
+void ul_destroy(UserList* ul) {
+    free(ul->users);
+    ul->users = NULL;
+    ul->size = 0;
+    ul->capacity = 0;
+}
+
+void ul_resize(UserList* ul, int new_capacity) {
+    if (new_capacity > ul->capacity) {
+        ul->users = realloc(ul->users, new_capacity * sizeof(User));
+        ul->capacity = new_capacity;
+    }
+}
+
+void ul_clear(UserList* ul) {
+    ul->size = 0;
+}
+
+void ul_remove(UserList* ul, int index) {
+    if (index >= 0 && index < ul->size) {
+        for (int i = index; i < ul->size - 1; i++) {
+            ul->users[i] = ul->users[i + 1];
+        }
+        ul->size--;
+    }
+}
+
+bool login(FileSystem* fs, char* username, char* password) {
+    for (int i = 0; i < fs->user_list.size; i++) {
+        if (strcmp(fs->user_list.users[i].user_name, username) == 0 &&
+            strcmp(fs->user_list.users[i].password, password) == 0) {
+            fs->current_user_id = fs->user_list.users[i].user_id;
+            return true; // Login successful
+        }
+    }
+    return false; // Login failed
+}
+
+bool check_user(FileSystem* fs, char* username) {
+    for (int i = 0; i < fs->user_list.size; i++) {
+        if (strcmp(fs->user_list.users[i].user_name, username) == 0) {
+            return true; // User exists
+        }
+    }
+    return false; // User does not exist
+}
+
+bool modifyPassword(FileSystem* fs, char* username, char* newPassword) {
+    for (int i = 0; i < fs->user_list.size; i++) {
+        if (strcmp(fs->user_list.users[i].user_name, username) == 0) {
+            strcpy(fs->user_list.users[i].password, newPassword);
+            return true; // Password changed successfully
+        }
+    }
+    return false; // User does not exist, change failed
+}
+
+void logout(FileSystem* fs) {
+    fs->current_user_id = 0; // Reset current user ID to none
+}
+
+void addUser(FileSystem* fs, User user) {
+    ul_push_back(&fs->user_list, user); // Assuming ul_push_back is defined
+}
+
+void rmUser(FileSystem* fs, char* username) {
+    for (int i = 0; i < fs->user_list.size; i++) {
+        if (strcmp(fs->user_list.users[i].user_name, username) == 0) {
+            ul_remove(&fs->user_list, i); // Assuming ul_remove is defined
+            break;
+        }
+    }
+}
+
+void createGroup(FileSystem* fs, Group group) {
+    gl_push_back(&fs->group_list, group); // Assuming gl_push_back is defined
+}
+
+void deleteGroup(FileSystem* fs, ui16 group_id) {
+    for (int i = 0; i < fs->group_list.size; i++) {
+        if (fs->group_list.groups[i].group_id == group_id) {
+            gl_remove(&fs->group_list, i); // Assuming gl_remove is defined
+            break;
+        }
+    }
+}
+
