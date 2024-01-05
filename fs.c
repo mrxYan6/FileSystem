@@ -1332,7 +1332,7 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
     if(fs.read_count == 0)
 	wait(fs.write_lock);
     fs.read_count++;
-    sigal(fs.Rmutex);
+    signal(fs.Rmutex);
     if (Parser(fs, path, &in)) {
         int id = open_(fs, tb, in);
 
