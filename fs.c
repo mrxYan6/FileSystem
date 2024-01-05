@@ -1595,3 +1595,30 @@ void deleteGroup(FileSystem* fs, ui16 group_id) {
     }
 }
 
+
+int attachGroup(FileSystem* fs, ui16 user_id, ui16 group_id) {
+    for (int i = 0; i < fs->group_list.size; i++) {
+        if (fs->group_list.groups[i].group_id == group_id) {
+            bool userAlreadyInGroup = false;
+            for (int j = 0; j < fs->group_list.groups[i].user_count; j++) {
+                if (fs->group_list.groups[i].user_id[j] == user_id) {
+                    userAlreadyInGroup = true;
+                    break;
+                }
+            }
+
+            if (!userAlreadyInGroup) {
+                if (fs->group_list.groups[i].user_count < sizeof(fs->group_list.groups[i].user_id) / sizeof(ui16)) {
+                    fs->group_list.groups[i].user_id[fs->group_list.groups[i].user_count] = user_id;
+                    fs->group_list.groups[i].user_count++;
+                    return 0; // Success
+                } else {
+                    return -2; // Group is full
+                }
+            } else {
+                return -1; // User already in group
+            }
+        }
+    }
+    return -3; // Group not found
+}
