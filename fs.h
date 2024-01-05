@@ -18,8 +18,8 @@ typedef unsigned short ui16;
 typedef struct User {
     ui16 user_id;                   // 2B   用户id
     ui16 group_id;                  // 2B   用户所属组id
-    char user_name[10];                // 8B   用户名
-    char password[16];                 // 8B   密码
+    char user_name[10];             // 8B   用户名
+    char password[16];              // 8B   密码
 } User;                             // 20B
 
 typedef struct UserList {
