@@ -1458,3 +1458,21 @@ void loadFs(FileSystem* fs, FILE *stream) {
         fs->current_dir_path[1] = '\0';
     }
 }
+
+//判断用户是否具有权限rwx该文件
+bool checkPermission(FileSystem* fs，INode* inode, int opt)
+{
+	int groupnum;
+	for (int i = 0; i <= fs->grouplist.size; i++)
+	{
+		for (int j = 0; j < fs->group_list->groups[i].user_count; j++)
+		{
+			if (current_user_id == fs->group_list->group[i].user_id[j])
+				groupnum = i;
+		}
+	}
+	if((inode.type >> (3 + 3 * groupnum + opt) & 1)
+		retrun false;
+	else
+		retrun true;
+}
