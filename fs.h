@@ -35,6 +35,7 @@ typedef struct INode {
     ui16 second_indexed_block;      // 2B   二级索引块 
     ui16 type;                      // 2B   文件属性 dir/file/link rwxrwxrwx
     ui16 link_count;                // 2B   链接数
+    ui16 user_id;                   // 2B   属于的用户id
     time_t created_time;            // 8B   创建时间
     time_t modified_time;           // 8B   修改时间
     time_t access_time;             // 8B   访问时间
@@ -56,13 +57,13 @@ typedef struct Dentry {
 } Dentry;                           // 48B
 
 typedef struct FileSystem {
-    Disk disk;
-    SuperBlock super_block;
-    InodeBitmap inode_bitmap;
-    BlockBitmap block_bitmap;
-    ui16 root_inode;
-    ui16 current_dir_inode;
-    char* current_dir_path;
+    Disk disk;                      // 磁盘
+    SuperBlock super_block;         // 超级块
+    InodeBitmap inode_bitmap;       // inode的位图
+    BlockBitmap block_bitmap;       // block的位图
+    ui16 root_inode;                // 根目录inode编号
+    ui16 current_dir_inode;         // 当前目录inode编号
+    char* current_dir_path;         // 当前目录路径
 } FileSystem;
 
 typedef struct UserOpenItem {
