@@ -94,6 +94,8 @@ typedef struct INode {
     ui16 type;                      // 2B   文件属性 dir/file/link rwxrwxrwx
     ui16 link_count;                // 2B   链接数
     ui16 user_id;                   // 2B   属于的用户id
+    ui16 read_lock;                 // 2B   读锁数
+    ui16 write_lock;                // 2B   写锁数
     time_t created_time;            // 8B   创建时间
     time_t modified_time;           // 8B   修改时间
     time_t access_time;             // 8B   访问时间
@@ -201,5 +203,7 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
 
 // exit fs
 void exitfs(FileSystem* fs, UserOpenTable* tb, FILE* stream);
+
+bool checkPermission(FileSystem* fs, INode* inode, int opt);
 
 #endif
