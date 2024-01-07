@@ -1361,6 +1361,7 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
     fs.reand_count--;
     if(fs.read_count == 0)
 	signal(fs.write_lock);
+    signal(fs.Rmutex);
 }
 
 void write_(FileSystem* fs,UserOpenTable* tb, int idx, int length, char* content, int opt){
