@@ -1321,14 +1321,45 @@ void close(FileSystem* fs,UserOpenTable* tb, char* path){
     }
 }
 
+
+
+//判断当前用户是否具有对该文件的rwx权限, rwx: 2, 1, 0
+bool checkPermission(FileSystem* fs, ui16 id, int opt) {
+    INode inode = readInode(fs, id);
+	int groupnum_current_user;
+	int groupnum_user_id;
+	int count;
+	for (int i = 0; i <= fs->group_list.size; i++)
+	{
+		for (int j = 0; j < fs->group_list.groups[i].user_count; j++)
+		{
+			if (fs->current_user_id == fs->group_list.groups[i].user_id[j])
+				groupnum_current_user = i;
+			if (inode.user_id == fs->group_list.groups[i].user_id[j])
+				groupnum_user_id = i;
+		}
+	}
+	if (fs->current_user_id == inode.user_id)
+		count = 0;
+	else if (groupnum_current_user == groupnum_user_id)
+		count = 1;
+	else
+		count = 2;
+	if((inode.type >> (3 + 3 * count + opt) & 1))
+		return false;
+	else
+		return true;
+}
+
 int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content) {
     ui16 in;
     if (Parser(fs, path, &in)) {
+        if (checkPermission(fs, in, 2)) {
+            perror("no permission\n");
+            return 0;
+        }
         int id = open_(fs, tb, in);
-
-        // printf("Opened %d\n", id);
-        // printf("Reading %d %d %d\n", id, tb->items[id].offset, length);
-
+    
         if (tb->items[id].offset >= tb->items[id].inode.size) {
             printf("EOF\n");
             memset(content, 0, length);
@@ -1372,6 +1403,10 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
     ui16 in;
     if (Parser(fs, path, &in)) {
         int id = open_(fs, tb, in);
+        if (checkPermission(fs, in, 1)) {
+            perror("no permission\n");
+            return 0;
+        }
         write_(fs, tb, id, length, content, opt);
         close_(fs, tb, in);
         open_(fs, tb, in);
@@ -1381,6 +1416,20 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
 }
 
 
+void chmod(FileSystem* fs, char* path, int mode) {
+    ui16 in;
+    if (Parser(fs, path, &in)) {
+        if (checkPermission(fs, in, 2)) {
+            perror("no permission\n");
+            return 0;
+        }
+        INode inode = readInode(fs, in);
+        inode.type = (inode.type & 07000) | mode;
+        writeInode(fs, in, &inode);
+    } else {
+        perror("no such file\n");
+    }
+}
 
 void exitfs(FileSystem* fs, UserOpenTable* tb, FILE *stream) {
     while (tb->size) {
@@ -1459,33 +1508,6 @@ void loadFs(FileSystem* fs, FILE *stream) {
     }
 }
 
-//判断当前用户是否具有对该文件的rwx权限
-bool checkPermission(FileSystem* fs, INode* inode, int opt)
-{
-	int groupnum_current_user;
-	int groupnum_user_id;
-	int count;
-	for (int i = 0; i <= fs->group_list.size; i++)
-	{
-		for (int j = 0; j < fs->group_list->groups[i].user_count; j++)
-		{
-			if (fs.current_user_id == fs->group_list->group[i].user_id[j])
-				groupnum_current_user = i;
-			if (inode.user_id == fs->group_list->group[i].user_id[j])
-				groupnum_user_id = i;
-		}
-	}
-	if (fs.current_user_id == inode.user_id)
-		count = 0;
-	else if (groupnum_current_user == groupnum_user_id)
-		count = 1;
-	else
-		count = 2;
-	if((inode.type >> (3 + 3 * count + opt) & 1))
-		retrun false;
-	else
-		retrun true;
-}
 
 
 void ul_push_back(UserList* ul, User user) {
@@ -1622,3 +1644,4 @@ int attachGroup(FileSystem* fs, ui16 user_id, ui16 group_id) {
     }
     return -3; // Group not found
 }
+
