@@ -1340,12 +1340,12 @@ bool checkPermission(FileSystem* fs, ui16 id, int opt) {
 		}
 	}
 	if (fs->current_user_id == inode.user_id)
-		count = 0;
+		count = 2;
 	else if (groupnum_current_user == groupnum_user_id)
 		count = 1;
 	else
-		count = 2;
-	if((inode.type >> (3 + 3 * count + opt) & 1))
+		count = 0;
+	if((inode.type >> (3 * count + opt) & 1))
 		return false;
 	else
 		return true;
