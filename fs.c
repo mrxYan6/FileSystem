@@ -1664,9 +1664,6 @@ int attachGroup(FileSystem* fs, ui16 user_id, ui16 group_id) {
     }
     return -3; // Group not found
 }
-<<<<<<< HEAD
-
-=======
 void createHardLink(FileSystem* fs, ui16 source_inode_id, ui16 target_dir_id, char* link_name, ui16 name_length) {
     // 检查目标目录中是否已经存在同名链接
     if (dirGet(fs, target_dir_id, link_name)) {
@@ -1695,4 +1692,3 @@ void createSoftLink(FileSystem* fs, char* target_path, ui16 target_dir_id, char*
         setLinkTarget(fs, link_inode_id, target_path);  // 假设设置软链接目标路径的函数为setLinkTarget
     }
 }
->>>>>>> 93757cd3e30d503f301384e69fd9f2a7a9fe240b
