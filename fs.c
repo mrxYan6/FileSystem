@@ -1265,8 +1265,6 @@ int open_(FileSystem* fs, UserOpenTable* tb, ui16 inode_num) {
         return id;
     } else {
         INode inode = readInode(fs, inode_num);
-	if(!checkPermission(fs,inode,0))
-	    return 0；	
         // printf("open inode: %d\n", inode.inode_number);
         UserOpenItem item;
         item.inode = inode;
