@@ -166,6 +166,8 @@ void saveFs(FileSystem* fs, FILE *stream);
 // file system load from file
 void loadFs(FileSystem* fs, FILE *stream);
 
+void saveDentry(FileSystem* fs, Dentry* dentry);
+
 // api
 
 // my_format
@@ -174,11 +176,10 @@ void format(FileSystem* fs);
 // my_mkdir
 void mkdir(FileSystem* fs, char* path);
 
+void pwd(FileSystem* fs);
 // my_rm + my_rmdir
 // recursive = 0: rm file or empty dir; recursive = 1: rm dir and all its subdirs
 void rm(FileSystem* fs, char* path, int recursive); 
-
-void saveDentry(FileSystem* fs, Dentry* dentry);
 
 // my_ls
 void ls(FileSystem* fs, char* path);
@@ -204,6 +205,6 @@ void write(FileSystem* fs, UserOpenTable* tb, char* path, int length, char* cont
 // exit fs
 void exitfs(FileSystem* fs, UserOpenTable* tb, FILE* stream);
 
-bool checkPermission(FileSystem* fs, INode* inode, int opt);
+bool checkPermission(FileSystem* fs, ui16 inode, int opt);
 
 #endif

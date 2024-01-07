@@ -1356,8 +1356,6 @@ bool checkPermission(FileSystem* fs, ui16 id, int opt) {
 int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content) {
     ui16 in;
     INode inode = readInode(fs,in);
-    if(!checkPermission(fs,inode,0))
-	return ;
     wait(fs.Rmutex);
     if(fs.read_count == 0)
 	wait(fs.write_lock);
@@ -1397,8 +1395,6 @@ int read(FileSystem* fs,UserOpenTable* tb, char* path, int length, void* content
 
 void write_(FileSystem* fs,UserOpenTable* tb, int idx, int length, char* content, int opt){
     INode inode = readInode(fs,idex);
-    if(!checkPermission(fs,inode,0))
-	return ;
     printf("WT %d %d %d\n", idx, length, opt);
     if (opt == 0) {
         // 覆盖写
