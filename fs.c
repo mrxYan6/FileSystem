@@ -551,7 +551,7 @@ void fsWrite(FileSystem*fs, INode* inode, int offset, void* context, int size) {
                 int r = (cur_block == end_block) ? end % block_size : block_size - 1;
                 // printf("Writing block %d %dto%d\n", inode->direct_block[i],l, r);
                 memcpy(buffer + l, context + context_ptr, r - l + 1);
-                dataWriteBlock(fs, first_index[i], buffer);
+                dataWriteBlock(fs, first_index[j], buffer);
                 context_ptr += r - l + 1;
                 cur_block++;
                 cur += r - l + 1;
